@@ -85,6 +85,7 @@ async def create_product(req: ProductCreate, seller=Depends(require_seller)):
         pass
 
     doc["id"] = product_id
+    doc.pop("_id", None)
     doc.pop("embedding", None)
     return doc
 

@@ -37,18 +37,29 @@ def format_user(user):
 async def register(req: RegisterRequest):
     users = get_users_collection()
 
-    # Check existing
-    existing = await users.find_one({"email": req.email})
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+    # Check existing (wrapped in try-except to handle IP whitelist errors gracefully)
+    try:
+        existing = await users.find_one({"email": req.email})
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already registered")
+    except HTTPException:
+        raise
+    except Exception as e:
+        if "ServerSelectionTimeoutError" in type(e).__name__:
+            raise HTTPException(
+                status_code=503,
+                detail="MongoDB Connection Failed: Please whitelist your IP address (0.0.0.0/0) in MongoDB Atlas Network Access."
+            )
+        raise HTTPException(status_code=500, detail="Database error occurred.")
+
 
     if req.role not in ["buyer", "seller"]:
         raise HTTPException(status_code=400, detail="Role must be 'buyer' or 'seller'")
 
-    # Process face encoding if provided
+    # Process face encoding if provided (runs in thread pool — non-blocking)
     face_encoding = None
     if req.face_image_b64:
-        face_encoding = encode_face_from_base64(req.face_image_b64)
+        face_encoding = await encode_face_from_base64(req.face_image_b64)
 
     user_doc = {
         "email": req.email,
@@ -80,16 +91,33 @@ async def login(req: LoginRequest):
 @router.post("/face-login")
 async def face_login(req: FaceLoginRequest):
     """Authenticate user using face recognition from a webcam frame."""
+    # Encode the incoming image first (runs in thread pool)
+    new_encoding = await encode_face_from_base64(req.image_b64)
+    if not new_encoding:
+        raise HTTPException(status_code=400, detail="No face detected in image. Please try again in better lighting.")
+
     users = get_users_collection()
-
-    # Iterate through users who have face encodings
     cursor = users.find({"face_encoding": {"$ne": None}})
+    
+    best_match_user = None
+    max_score = -1.0
+    
+    # 1. Find the absolute closest matching face in the DB using cross-correlation
     async for user in cursor:
-        if compare_face(user["face_encoding"], req.image_b64):
-            token = create_access_token({"sub": str(user["_id"]), "role": user["role"]})
-            return {"access_token": token, "token_type": "bearer", "user": format_user(user)}
+        score = compare_face(user["face_encoding"], new_encoding)
+        if score > max_score:
+            max_score = score
+            best_match_user = user
 
-    raise HTTPException(status_code=401, detail="Face not recognized. Please use password login.")
+    print(f"Best match score: {max_score:.4f} for user: {best_match_user['email'] if best_match_user else 'None'}")
+
+    # 2. Check if the closest match is within a safe correlation threshold
+    # TM_CCOEFF_NORMED > 0.55 strongly indicates the same person without requiring exact pixel matches
+    if best_match_user and max_score > 0.55:
+        token = create_access_token({"sub": str(best_match_user["_id"]), "role": best_match_user["role"]})
+        return {"access_token": token, "token_type": "bearer", "user": format_user(best_match_user)}
+
+    raise HTTPException(status_code=401, detail="Face not recognized or match too weak. Please try again or use password login.")
 
 @router.post("/enroll-face")
 async def enroll_face(data: dict = Body(...)):
@@ -100,7 +128,7 @@ async def enroll_face(data: dict = Body(...)):
     if not user_id or not image_b64:
         raise HTTPException(status_code=400, detail="user_id and image_b64 required")
 
-    encoding = encode_face_from_base64(image_b64)
+    encoding = await encode_face_from_base64(image_b64)
     if not encoding:
         raise HTTPException(status_code=400, detail="No face detected in image")
 

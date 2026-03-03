@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { authApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -16,6 +16,13 @@ export default function RegisterPage() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const { login } = useAuth();
+
+    // Auto-start camera when reaching Face ID step
+    useEffect(() => {
+        if (step === 2 && !cameraOn && !faceB64) {
+            startCamera();
+        }
+    }, [step]);
 
     const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 

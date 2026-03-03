@@ -1,4 +1,9 @@
-from neo4j import GraphDatabase
+try:
+    from neo4j import GraphDatabase
+    NEO4J_AVAILABLE = True
+except ImportError:
+    NEO4J_AVAILABLE = False
+    print("neo4j package not installed - graph recommendations disabled")
 import os
 from dotenv import load_dotenv
 from typing import List, Dict
@@ -13,13 +18,15 @@ _driver = None
 
 def get_driver():
     global _driver
+    if not NEO4J_AVAILABLE:
+        return None
     if _driver is None:
         try:
             _driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
             _driver.verify_connectivity()
-            print("✅ Neo4j connected")
+            print("Neo4j connected")
         except Exception as e:
-            print(f"⚠️ Neo4j connection failed (recommendations disabled): {e}")
+            print(f"Neo4j connection failed (recommendations disabled): {e}")
             _driver = None
     return _driver
 

@@ -1,5 +1,4 @@
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import MongoClient
 import os
 from dotenv import load_dotenv
 
@@ -7,13 +6,15 @@ load_dotenv()
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/smarter_blinkit")
 
-# Async client (for FastAPI endpoints)
-async_client = AsyncIOMotorClient(MONGO_URI)
+# Async client (for FastAPI endpoints) — lazily connected, non-blocking
+# Async client with short timeout so connection failures fail fast
+async_client = AsyncIOMotorClient(
+    MONGO_URI,
+    serverSelectionTimeoutMS=5000,
+    connectTimeoutMS=5000,
+    socketTimeoutMS=5000,
+)
 async_db = async_client.smarter_blinkit
-
-# Sync client (for startup tasks)
-sync_client = MongoClient(MONGO_URI)
-sync_db = sync_client.smarter_blinkit
 
 # Collections
 def get_users_collection():
