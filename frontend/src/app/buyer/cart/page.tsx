@@ -1,0 +1,372 @@
+"use client";
+import { useState, useEffect } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
+import { ordersApi } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
+
+type CartItem = {
+    id: string; name: string; price: number; qty: number;
+    seller_id: string; seller_name?: string; unit?: string;
+};
+
+// ─── Demo Payment Modal ──────────────────────────────────────────────────────
+function PaymentModal({
+    total, orderId, onSuccess, onClose
+}: {
+    total: number; orderId: string;
+    onSuccess: (txnId: string) => void; onClose: () => void;
+}) {
+    const [cardName, setCardName] = useState("");
+    const [cardNumber, setCardNumber] = useState("");
+    const [expiry, setExpiry] = useState("");
+    const [cvv, setCvv] = useState("");
+    const [step, setStep] = useState<"form" | "processing" | "success">("form");
+    const [txnId, setTxnId] = useState("");
+
+    // Format card number display
+    const formatCard = (v: string) =>
+        v.replace(/\D/g, "").slice(0, 16).replace(/(.{4})/g, "$1 ").trim();
+
+    const handlePay = async () => {
+        if (!cardName || cardNumber.replace(/\s/g, "").length < 16 || !expiry || !cvv) {
+            toast.error("Please fill all payment details");
+            return;
+        }
+        setStep("processing");
+        // Simulate 2-second processing
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+            const last4 = cardNumber.replace(/\s/g, "").slice(-4);
+            const res = await ordersApi.pay(orderId, cardName, last4);
+            setTxnId(res.data.transaction_id);
+            setStep("success");
+            setTimeout(() => onSuccess(res.data.transaction_id), 2000);
+        } catch (err: any) {
+            setStep("form");
+            toast.error(err.response?.data?.detail || "Payment failed");
+        }
+    };
+
+    return (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && step === "form" && onClose()}>
+            <div className="modal-box">
+                {step === "form" && (
+                    <>
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 style={{ fontSize: 22, fontWeight: 800, color: "var(--gray-900)" }}>Demo Payment</h2>
+                                <p style={{ fontSize: 13, color: "var(--gray-500)", marginTop: 2 }}>
+                                    Secure demo checkout — no real charges
+                                </p>
+                            </div>
+                            <button onClick={onClose}
+                                style={{ width: 32, height: 32, borderRadius: 8, background: "var(--gray-100)", border: "none", cursor: "pointer", fontSize: 16 }}>
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* Amount banner */}
+                        <div style={{
+                            background: "var(--yellow-subtle)", border: "1.5px solid var(--yellow-light)",
+                            borderRadius: 12, padding: "12px 16px", marginBottom: 20,
+                            display: "flex", alignItems: "center", justifyContent: "space-between"
+                        }}>
+                            <span style={{ fontSize: 13, color: "var(--gray-500)", fontWeight: 500 }}>Amount to pay</span>
+                            <span style={{ fontSize: 22, fontWeight: 900, color: "var(--gray-900)" }}>₹{total.toFixed(2)}</span>
+                        </div>
+
+                        {/* Card preview */}
+                        <div style={{
+                            background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)",
+                            borderRadius: 16, padding: "20px 24px", marginBottom: 20, color: "white",
+                            position: "relative", overflow: "hidden"
+                        }}>
+                            <div style={{
+                                position: "absolute", top: -20, right: -20, width: 120, height: 120,
+                                borderRadius: "50%", background: "rgba(255,208,0,0.1)"
+                            }} />
+                            <p style={{ fontSize: 11, opacity: 0.6, marginBottom: 14, letterSpacing: "0.1em", textTransform: "uppercase" }}>Demo Card</p>
+                            <p style={{ fontSize: 20, letterSpacing: "0.15em", fontWeight: 600, marginBottom: 16, fontFamily: "monospace" }}>
+                                {cardNumber || "•••• •••• •••• ••••"}
+                            </p>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+                                <div>
+                                    <p style={{ fontSize: 10, opacity: 0.5, marginBottom: 2 }}>CARD HOLDER</p>
+                                    <p style={{ fontSize: 14, fontWeight: 600 }}>{cardName || "YOUR NAME"}</p>
+                                </div>
+                                <div style={{ textAlign: "right" }}>
+                                    <p style={{ fontSize: 10, opacity: 0.5, marginBottom: 2 }}>EXPIRES</p>
+                                    <p style={{ fontSize: 14, fontWeight: 600 }}>{expiry || "MM/YY"}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Form fields */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
+                            <div>
+                                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--gray-500)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                    Cardholder Name
+                                </label>
+                                <input className="input" value={cardName}
+                                    onChange={(e) => setCardName(e.target.value)}
+                                    placeholder="Ravi Drolia" />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--gray-500)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                    Card Number
+                                </label>
+                                <input className="input" value={cardNumber}
+                                    onChange={(e) => setCardNumber(formatCard(e.target.value))}
+                                    placeholder="4111 1111 1111 1111" maxLength={19}
+                                    style={{ fontFamily: "monospace", letterSpacing: "0.05em" }} />
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                <div>
+                                    <label style={{ fontSize: 11, fontWeight: 600, color: "var(--gray-500)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                        Expiry
+                                    </label>
+                                    <input className="input" value={expiry}
+                                        onChange={(e) => {
+                                            const v = e.target.value.replace(/\D/g, "").slice(0, 4);
+                                            setExpiry(v.length > 2 ? `${v.slice(0, 2)}/${v.slice(2)}` : v);
+                                        }}
+                                        placeholder="MM/YY" maxLength={5} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 11, fontWeight: 600, color: "var(--gray-500)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                        CVV
+                                    </label>
+                                    <input className="input" value={cvv}
+                                        onChange={(e) => setCvv(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                                        placeholder="•••" maxLength={3} type="password" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <button onClick={handlePay} className="btn-primary" style={{ width: "100%", padding: "14px", fontSize: 16 }}>
+                            Pay ₹{total.toFixed(2)} →
+                        </button>
+                        <p style={{ textAlign: "center", fontSize: 12, color: "var(--gray-400)", marginTop: 10 }}>
+                            🔒 Demo mode — no real charges · Any card number works
+                        </p>
+                    </>
+                )}
+
+                {step === "processing" && (
+                    <div style={{ textAlign: "center", padding: "20px 0" }}>
+                        <div style={{ fontSize: 56, marginBottom: 16 }} className="animate-spin-slow">⚡</div>
+                        <h3 style={{ fontSize: 20, fontWeight: 800, color: "var(--gray-900)", marginBottom: 8 }}>Processing Payment…</h3>
+                        <p style={{ fontSize: 14, color: "var(--gray-500)" }}>Please wait while we confirm your order</p>
+                        {/* Progress bar */}
+                        <div style={{ height: 4, background: "var(--gray-100)", borderRadius: 99, marginTop: 24, overflow: "hidden" }}>
+                            <div style={{
+                                height: "100%", background: "var(--yellow-primary)", borderRadius: 99,
+                                animation: "shimmer 1.5s ease infinite",
+                                width: "60%",
+                            }} />
+                        </div>
+                    </div>
+                )}
+
+                {step === "success" && (
+                    <div style={{ textAlign: "center", padding: "20px 0" }}>
+                        <div style={{
+                            width: 72, height: 72, borderRadius: "50%", background: "#DCFCE7",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 36, margin: "0 auto 16px"
+                        }}>✅</div>
+                        <h3 style={{ fontSize: 22, fontWeight: 800, color: "var(--gray-900)", marginBottom: 8 }}>Payment Successful!</h3>
+                        <p style={{ fontSize: 14, color: "var(--gray-500)", marginBottom: 16 }}>Your order has been placed.</p>
+                        <div style={{
+                            background: "var(--gray-50)", borderRadius: 12, padding: "12px 16px",
+                            fontFamily: "monospace", fontSize: 13, color: "var(--gray-700)", wordBreak: "break-all"
+                        }}>
+                            <span style={{ color: "var(--gray-400)", fontSize: 11 }}>Transaction ID</span>
+                            <br />{txnId}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ─── Cart Page ────────────────────────────────────────────────────────────────
+export default function CartPage() {
+    const [cart, setCart] = useState<CartItem[]>([]);
+    const [address, setAddress] = useState("");
+    const [loadingOrder, setLoadingOrder] = useState(false);
+    const [orderId, setOrderId] = useState<string | null>(null);
+    const [showPayModal, setShowPayModal] = useState(false);
+    const [total, setTotal] = useState(0);
+    const { user } = useAuth();
+    const router = useRouter();
+
+    useEffect(() => {
+        const stored = JSON.parse(localStorage.getItem("sb_cart") || "[]");
+        setCart(stored);
+    }, []);
+
+    useEffect(() => {
+        setTotal(cart.reduce((s, i) => s + i.price * i.qty, 0));
+    }, [cart]);
+
+    const saveCart = (c: CartItem[]) => {
+        setCart(c);
+        localStorage.setItem("sb_cart", JSON.stringify(c));
+    };
+
+    const updateQty = (id: string, delta: number) => {
+        saveCart(cart.map((i) => i.id === id ? { ...i, qty: Math.max(0, i.qty + delta) } : i).filter((i) => i.qty > 0));
+    };
+
+    const remove = (id: string) => saveCart(cart.filter((i) => i.id !== id));
+
+    // Smart split: group by shop
+    const shopGroups = cart.reduce((g: Record<string, CartItem[]>, i) => {
+        const k = i.seller_name || i.seller_id || "Unknown Shop";
+        (g[k] = g[k] || []).push(i);
+        return g;
+    }, {});
+
+    const handleProceedToPayment = async () => {
+        if (!address.trim()) return toast.error("Please enter a delivery address");
+        if (cart.length === 0) return toast.error("Your cart is empty");
+        setLoadingOrder(true);
+        try {
+            const res = await ordersApi.create({
+                items: cart.map((i) => ({ product_id: i.id, quantity: i.qty })),
+                delivery_address: address,
+            });
+            setOrderId(res.data.order_id);
+            setShowPayModal(true);
+        } catch (err: any) {
+            toast.error(err.response?.data?.detail || "Could not create order");
+        } finally {
+            setLoadingOrder(false);
+        }
+    };
+
+    const handlePaymentSuccess = (txnId: string) => {
+        localStorage.removeItem("sb_cart");
+        toast.success(`🎉 Order placed! TXN: ${txnId.slice(0, 20)}…`, { duration: 5000 });
+        setShowPayModal(false);
+        router.push("/buyer/orders");
+    };
+
+    if (cart.length === 0) return (
+        <DashboardLayout role="buyer">
+            <div style={{ textAlign: "center", padding: "80px 0" }}>
+                <span style={{ fontSize: 72, display: "block", marginBottom: 16 }}>🛒</span>
+                <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Cart is empty</h2>
+                <p style={{ color: "var(--gray-500)", marginBottom: 24 }}>Browse products or let the Recipe Agent fill it!</p>
+                <a href="/buyer/search" className="btn-primary">Start Shopping →</a>
+            </div>
+        </DashboardLayout>
+    );
+
+    return (
+        <DashboardLayout role="buyer">
+            {showPayModal && orderId && (
+                <PaymentModal
+                    total={total} orderId={orderId}
+                    onSuccess={handlePaymentSuccess}
+                    onClose={() => setShowPayModal(false)}
+                />
+            )}
+
+            <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>🛒 Your Cart</h1>
+            <p style={{ fontSize: 14, color: "var(--gray-500)", marginBottom: 24 }}>
+                {cart.length} item{cart.length !== 1 ? "s" : ""}
+                {Object.keys(shopGroups).length > 1 && (
+                    <span className="badge badge-yellow" style={{ marginLeft: 8 }}>
+                        ⚡ Smart Split: {Object.keys(shopGroups).length} shops
+                    </span>
+                )}
+            </p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 24, alignItems: "start" }}>
+                {/* Cart Items — grouped by shop */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    {Object.entries(shopGroups).map(([shopName, items]) => (
+                        <div key={shopName} className="card-flat">
+                            <p style={{ fontSize: 12, fontWeight: 700, color: "var(--gray-400)", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                🏪 {shopName}
+                            </p>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                                {items.map((item) => (
+                                    <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                                        <div style={{ width: 48, height: 48, borderRadius: 12, background: "var(--yellow-subtle)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>🛒</div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <p style={{ fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</p>
+                                            <p style={{ fontSize: 12, color: "var(--gray-400)" }}>₹{item.price} / {item.unit || "piece"}</p>
+                                        </div>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                            <button onClick={() => updateQty(item.id, -1)}
+                                                style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: "var(--gray-100)", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>−</button>
+                                            <span style={{ fontWeight: 700, width: 24, textAlign: "center" }}>{item.qty}</span>
+                                            <button onClick={() => updateQty(item.id, 1)}
+                                                style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: "var(--gray-100)", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>+</button>
+                                        </div>
+                                        <span style={{ fontWeight: 900, fontSize: 14, width: 64, textAlign: "right" }}>₹{item.price * item.qty}</span>
+                                        <button onClick={() => remove(item.id)}
+                                            style={{ color: "var(--gray-300)", background: "none", border: "none", fontSize: 18, cursor: "pointer" }}>✕</button>
+                                    </div>
+                                ))}
+                                <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: 8, textAlign: "right", fontSize: 14, fontWeight: 700, color: "var(--gray-700)" }}>
+                                    Shop subtotal: ₹{items.reduce((s, i) => s + i.price * i.qty, 0).toFixed(2)}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Order Summary */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div className="card-flat">
+                        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Order Summary</h3>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 14 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "var(--gray-500)" }}>Subtotal</span><span>₹{total.toFixed(2)}</span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "var(--gray-500)" }}>Delivery</span>
+                                <span style={{ color: "var(--green)", fontWeight: 600 }}>FREE</span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: 18, borderTop: "1px solid var(--gray-100)", paddingTop: 8, marginTop: 4 }}>
+                                <span>Total</span><span>₹{total.toFixed(2)}</span>
+                            </div>
+                        </div>
+                        <div style={{ marginTop: 16 }}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--gray-500)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                Delivery Address
+                            </label>
+                            <textarea value={address} onChange={(e) => setAddress(e.target.value)}
+                                rows={2} className="input" style={{ resize: "none" }}
+                                placeholder="Enter your full delivery address..." />
+                        </div>
+                        <button onClick={handleProceedToPayment} disabled={loadingOrder}
+                            className="btn-primary" style={{ width: "100%", marginTop: 16, padding: "14px", fontSize: 16 }}>
+                            {loadingOrder ? "Creating order…" : `Pay ₹${total.toFixed(2)} →`}
+                        </button>
+                        <p style={{ textAlign: "center", fontSize: 12, color: "var(--gray-400)", marginTop: 8 }}>
+                            🔒 Demo payment — no real charges
+                        </p>
+                    </div>
+
+                    {Object.keys(shopGroups).length > 1 && (
+                        <div style={{ background: "var(--yellow-subtle)", border: "1px solid var(--yellow-light)", borderRadius: 16, padding: 16 }}>
+                            <p style={{ fontSize: 14, fontWeight: 700, color: "#92400E", marginBottom: 4 }}>⚡ Smart Cart Split Active</p>
+                            <p style={{ fontSize: 13, color: "#78350F" }}>
+                                Your order will be split across {Object.keys(shopGroups).length} shops for fastest delivery.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </DashboardLayout>
+    );
+}
