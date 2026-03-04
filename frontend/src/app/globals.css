@@ -249,6 +249,16 @@ body {
   box-shadow: 0 1px 8px rgba(0, 0, 0, 0.05);
 }
 
+/* ===== ADDRESS BAR ===== */
+.address-bar {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  right: 0;
+  z-index: 49;
+  height: 30px;
+}
+
 .navbar-logo {
   display: flex;
   align-items: center;
@@ -268,7 +278,7 @@ body {
 .sidebar {
   position: fixed;
   left: 0;
-  top: 64px;
+  top: 94px;
   bottom: 0;
   width: 240px;
   display: flex;
@@ -308,8 +318,8 @@ body {
 /* ===== PAGE LAYOUT ===== */
 .page-with-sidebar {
   margin-left: 240px;
-  margin-top: 64px;
-  min-height: calc(100vh - 64px);
+  margin-top: 94px;
+  min-height: calc(100vh - 94px);
   background: var(--off-white);
 }
 

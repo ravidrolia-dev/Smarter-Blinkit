@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { agentApi } from "@/lib/api";
+import { useLocation } from "@/hooks/useLocation";
 import toast from "react-hot-toast";
 
 type IngredientResult = {
@@ -19,26 +20,39 @@ export default function RecipeAgentPage() {
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<any | null>(null);
     const [added, setAdded] = useState<string[]>([]);
-    const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+    const [selectedModel, setSelectedModel] = useState("gemini-2.0-flash");
+    const { status, location } = useLocation();
+
+    const MODELS = [
+        {
+            id: "gemini-2.0-flash",
+            label: "Gemini 2.0 Flash",
+            badge: "⚡ Fast",
+            badgeColor: "#065f46",
+            badgeBg: "#d1fae5",
+            desc: "Faster · Lightweight · Great for simple recipes & quick answers"
+        },
+        {
+            id: "gemini-2.5-flash",
+            label: "Gemini 2.5 Flash",
+            badge: "🧠 Smart",
+            badgeColor: "#1e40af",
+            badgeBg: "#dbeafe",
+            desc: "Advanced reasoning · Detailed & accurate recipes · Slightly slower"
+        },
+    ];
 
     const examples = [
         "Make Pizza for 4 people", "Pasta dinner for 2",
         "Chicken curry for family", "Pancakes for breakfast", "Biryani for 6",
     ];
 
-    useState(() => {
-        navigator.geolocation?.getCurrentPosition(
-            (p) => setLocation({ lat: p.coords.latitude, lng: p.coords.longitude }),
-            () => { }
-        );
-    });
-
     const handleSearch = async () => {
         if (!meal.trim()) return;
         setLoading(true);
         setResult(null);
         try {
-            const res = await agentApi.recipe(meal, location?.lat, location?.lng);
+            const res = await agentApi.recipe(meal, location?.lat, location?.lng, selectedModel);
             setResult(res.data);
         } catch {
             toast.error("Agent failed. Check your Gemini API key.");
@@ -67,11 +81,34 @@ export default function RecipeAgentPage() {
     return (
         <DashboardLayout role="buyer">
             <h1 className="text-2xl font-black mb-1">🤖 Recipe Agent</h1>
-            <p className="text-sm text-gray-500 mb-6">
+            <p className="text-sm text-gray-500 mb-4">
                 Describe a meal — the AI will find all ingredients from nearby shops and fill your cart.
             </p>
 
-            {/* Input */}
+
+
+            {/* Model Selector Dropdown */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: "#6b7280", whiteSpace: "nowrap" }}>
+                    🤖 AI Model:
+                </label>
+                <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    style={{
+                        padding: "8px 14px", borderRadius: 10, fontSize: 14, fontWeight: 600,
+                        border: "1.5px solid #e5e7eb", background: "#fff", cursor: "pointer",
+                        color: "#1a1a1a", outline: "none", flexShrink: 0,
+                    }}>
+                    {MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>{m.badge} {m.label}</option>
+                    ))}
+                </select>
+                <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                    {MODELS.find((m) => m.id === selectedModel)?.desc}
+                </span>
+            </div>
+
             <div className="card mb-6">
                 <div className="flex gap-3">
                     <input
@@ -113,6 +150,9 @@ export default function RecipeAgentPage() {
                                 <span className="text-green-600 font-semibold">{result.found?.length} found</span>
                                 {result.not_found?.length > 0 && (
                                     <span className="text-red-500 font-semibold ml-2">{result.not_found?.length} not available</span>
+                                )}
+                                {status === "granted" && (
+                                    <span className="ml-2 text-yellow-600">📍 Location active</span>
                                 )}
                             </p>
                         </div>

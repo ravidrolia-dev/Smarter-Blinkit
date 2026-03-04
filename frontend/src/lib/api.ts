@@ -71,8 +71,8 @@ export const inventoryApi = {
 
 // ===== Agent =====
 export const agentApi = {
-    recipe: (meal: string, lat?: number, lng?: number) =>
-        api.get("/agent/recipe", { params: { meal, lat, lng } }),
+    recipe: (meal: string, lat?: number, lng?: number, model?: string) =>
+        api.get("/agent/recipe", { params: { meal, lat, lng, model } }),
 };
 
 // ===== Analytics =====

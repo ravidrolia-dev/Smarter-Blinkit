@@ -13,6 +13,7 @@ export default function AddProductPage() {
     const { user } = useAuth();
     const router = useRouter();
     const [loading, setLoading] = useState(false);
+    const [locationLoading, setLocationLoading] = useState(false);
     const [form, setForm] = useState({
         name: "", description: "", price: "", category: "Fruits", barcode: "",
         stock: "", unit: "piece", image_url: "", tags: "",
@@ -22,13 +23,29 @@ export default function AddProductPage() {
     const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
     const getLocation = () => {
-        navigator.geolocation?.getCurrentPosition(
+        if (!navigator.geolocation) {
+            toast.error("Geolocation is not supported by your browser.");
+            return;
+        }
+        setLocationLoading(true);
+        navigator.geolocation.getCurrentPosition(
             (pos) => {
                 set("lat", String(pos.coords.latitude));
                 set("lng", String(pos.coords.longitude));
-                toast.success("Location captured! 📍");
+                setLocationLoading(false);
+                toast.success("Shop location captured! 📍");
             },
-            () => toast.error("Location access denied")
+            (err) => {
+                setLocationLoading(false);
+                if (err.code === err.PERMISSION_DENIED) {
+                    toast.error("Location access denied. Enable it in browser settings.");
+                } else if (err.code === err.POSITION_UNAVAILABLE) {
+                    toast.error("Location unavailable. Enter coordinates manually.");
+                } else {
+                    toast.error("Location timed out. Please try again.");
+                }
+            },
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
         );
     };
 
@@ -128,10 +145,9 @@ export default function AddProductPage() {
                         </div>
                     </div>
 
-                    {/* Location */}
                     <div className="card-flat">
-                        <h2 className="font-bold text-gray-900 mb-3">Shop Location</h2>
-                        <p className="text-xs text-gray-500 mb-3">Used to find the nearest shop for buyers.</p>
+                        <h2 className="font-bold text-gray-900 mb-1">Shop Location</h2>
+                        <p className="text-xs text-gray-500 mb-3">Your shop's GPS coordinates — used to show your products to nearby buyers.</p>
                         <div className="flex gap-3 items-end">
                             <div className="flex-1">
                                 <label className="text-xs font-semibold text-gray-500 mb-1 block uppercase tracking-wide">Latitude</label>
@@ -141,10 +157,17 @@ export default function AddProductPage() {
                                 <label className="text-xs font-semibold text-gray-500 mb-1 block uppercase tracking-wide">Longitude</label>
                                 <input className="input font-mono" value={form.lng} onChange={(e) => set("lng", e.target.value)} placeholder="72.8777" />
                             </div>
-                            <button type="button" onClick={getLocation} className="btn-secondary py-3 px-4 mb-0.5">
-                                📍 Use My Location
+                            <button
+                                type="button"
+                                onClick={getLocation}
+                                disabled={locationLoading}
+                                className="btn-secondary py-3 px-4 mb-0.5 disabled:opacity-60">
+                                {locationLoading ? "⏳ Locating…" : "📍 Use My Location"}
                             </button>
                         </div>
+                        {form.lat && form.lng && (
+                            <p className="text-xs text-green-600 mt-2 font-medium">✓ Location set: {parseFloat(form.lat).toFixed(4)}, {parseFloat(form.lng).toFixed(4)}</p>
+                        )}
                     </div>
 
                     <div className="flex gap-3">

@@ -3,6 +3,7 @@ import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
 import { searchApi } from "@/lib/api";
+import { useLocation } from "@/hooks/useLocation";
 import toast from "react-hot-toast";
 
 // ─── Inner component that uses useSearchParams ─────────────────────────────
@@ -11,13 +12,9 @@ function SearchInner() {
     const [query, setQuery] = useState(params.get("q") || "");
     const [results, setResults] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
-    const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+    const { location } = useLocation();
 
     useEffect(() => {
-        navigator.geolocation?.getCurrentPosition(
-            (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-            () => { }
-        );
         const q = params.get("q");
         if (q) doSearch(q);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -52,10 +49,10 @@ function SearchInner() {
     return (
         <>
             <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>🔍 Smart Search</h1>
-            <p style={{ fontSize: 14, color: "var(--gray-500)", marginBottom: 20 }}>
+            <p style={{ fontSize: 14, color: "var(--gray-500)", marginBottom: 12 }}>
                 Search by intent — type what you need, not just a product name.
-                {location && <span className="badge badge-green" style={{ marginLeft: 8 }}>📍 Location active</span>}
             </p>
+
 
             <form onSubmit={handleSubmit} style={{ position: "relative", marginBottom: 16 }}>
                 <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}

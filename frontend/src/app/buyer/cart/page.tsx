@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ordersApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useLocation } from "@/hooks/useLocation";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 
@@ -202,6 +203,8 @@ export default function CartPage() {
     const [orderId, setOrderId] = useState<string | null>(null);
     const [showPayModal, setShowPayModal] = useState(false);
     const [total, setTotal] = useState(0);
+    const [detecting, setDetecting] = useState(false);
+    const { status, location, requestLocation } = useLocation();
     const { user } = useAuth();
     const router = useRouter();
 
@@ -213,6 +216,33 @@ export default function CartPage() {
     useEffect(() => {
         setTotal(cart.reduce((s, i) => s + i.price * i.qty, 0));
     }, [cart]);
+
+    // Auto-detect address logic
+    useEffect(() => {
+        if (!location) return;
+        setDetecting(true);
+        fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${location.lat}&lon=${location.lng}&format=json&addressdetails=1`,
+            { headers: { "Accept-Language": "en" } }
+        )
+            .then((r) => r.json())
+            .then((data) => {
+                const a = data.address;
+                const parts = [
+                    a.road || a.suburb || a.neighbourhood,
+                    a.city || a.town || a.village || a.county,
+                    a.state,
+                    a.postcode
+                ].filter(Boolean);
+                setAddress(parts.join(", "));
+                toast.success("Location detected!");
+            })
+            .catch(() => {
+                setAddress(`${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`);
+                toast.error("Could not fetch full address, using coordinates.");
+            })
+            .finally(() => setDetecting(false));
+    }, [location]);
 
     const saveCart = (c: CartItem[]) => {
         setCart(c);
@@ -341,9 +371,21 @@ export default function CartPage() {
                             </div>
                         </div>
                         <div style={{ marginTop: 16 }}>
-                            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--gray-500)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                                Delivery Address
-                            </label>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 4 }}>
+                                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--gray-500)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
+                                    Delivery Address
+                                </label>
+                                <button
+                                    onClick={requestLocation}
+                                    disabled={detecting}
+                                    style={{
+                                        fontSize: 11, fontWeight: 700, color: "var(--yellow-dark)",
+                                        background: "none", border: "none", cursor: "pointer",
+                                        padding: 0, display: "flex", alignItems: "center", gap: 3
+                                    }}>
+                                    {detecting ? "⌛ Detecting..." : "📍 Auto-detect"}
+                                </button>
+                            </div>
                             <textarea value={address} onChange={(e) => setAddress(e.target.value)}
                                 rows={2} className="input" style={{ resize: "none" }}
                                 placeholder="Enter your full delivery address..." />

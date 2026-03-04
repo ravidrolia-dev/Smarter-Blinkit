@@ -100,20 +100,20 @@ async def face_login(req: FaceLoginRequest):
     cursor = users.find({"face_encoding": {"$ne": None}})
     
     best_match_user = None
-    max_score = -1.0
+    min_distance = 10.0
     
-    # 1. Find the absolute closest matching face in the DB using cross-correlation
+    # 1. Find the absolute closest matching face in the DB using Cosine Distance
     async for user in cursor:
-        score = compare_face(user["face_encoding"], new_encoding)
-        if score > max_score:
-            max_score = score
+        distance = compare_face(user["face_encoding"], new_encoding)
+        if distance < min_distance:
+            min_distance = distance
             best_match_user = user
 
-    print(f"Best match score: {max_score:.4f} for user: {best_match_user['email'] if best_match_user else 'None'}")
+    print(f"Best match distance: {min_distance:.4f} for user: {best_match_user['email'] if best_match_user else 'None'}")
 
-    # 2. Check if the closest match is within a safe correlation threshold
-    # TM_CCOEFF_NORMED > 0.55 strongly indicates the same person without requiring exact pixel matches
-    if best_match_user and max_score > 0.55:
+    # 2. Check if the closest match is within a safe cosine distance threshold
+    # ArcFace threshold is 0.68. The threshold distance < 0.60 is slightly stricter to avoid false positives.
+    if best_match_user and min_distance < 0.60:
         token = create_access_token({"sub": str(best_match_user["_id"]), "role": best_match_user["role"]})
         return {"access_token": token, "token_type": "bearer", "user": format_user(best_match_user)}
 
