@@ -6,6 +6,8 @@ load_dotenv()
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/smarter_blinkit")
 
+import certifi
+
 # Async client (for FastAPI endpoints) — lazily connected, non-blocking
 # Async client with short timeout so connection failures fail fast
 async_client = AsyncIOMotorClient(
@@ -13,6 +15,7 @@ async_client = AsyncIOMotorClient(
     serverSelectionTimeoutMS=5000,
     connectTimeoutMS=5000,
     socketTimeoutMS=5000,
+    tlsCAFile=certifi.where() # Provide explicit Windows CA certificates to avoid SSL handshakes drops
 )
 async_db = async_client.smarter_blinkit
 

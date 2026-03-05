@@ -15,12 +15,15 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             detail="Invalid or expired token"
         )
     user_id = payload.get("sub")
-    users = get_users_collection()
-    user = await users.find_one({"_id": ObjectId(user_id)})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    user["id"] = str(user["_id"])
-    return user
+    role = payload.get("role")
+    
+    # Stateless authentication: Trust the cryptographically signed JWT payload
+    # instead of hitting MongoDB Atlas on every video frame scan request.
+    return {
+        "_id": ObjectId(user_id),
+        "id": str(user_id),
+        "role": role
+    }
 
 async def require_buyer(current_user=Depends(get_current_user)):
     if current_user.get("role") != "buyer":

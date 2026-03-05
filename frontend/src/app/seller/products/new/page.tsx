@@ -34,8 +34,8 @@ export default function AddProductPage() {
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     facingMode: "environment",
-                    width: { ideal: 1920, min: 1280 },
-                    height: { ideal: 1080, min: 720 }
+                    width: { ideal: 1280, min: 640 },
+                    height: { ideal: 720, min: 480 }
                 }
             });
             if (videoRef.current) {
@@ -108,7 +108,10 @@ export default function AddProductPage() {
                             } else if (low_light) {
                                 setScanStatus("Too dark! Increase light 💡");
                             } else if (barcode) {
-                                scanBufferRef.current.push(barcode);
+                                // Normalize alphanumeric barcodes to remove noise/spaces
+                                const normalizedBarcode = barcode.trim().replace(/\s+/g, "").toUpperCase();
+
+                                scanBufferRef.current.push(normalizedBarcode);
                                 if (scanBufferRef.current.length > 10) scanBufferRef.current.shift();
 
                                 // Multi-frame confirmation: Check if barcode appears 3 times in last 10 frames
@@ -125,7 +128,7 @@ export default function AddProductPage() {
                                 if (confirmed) {
                                     handleConfirmedBarcode(confirmed);
                                 } else {
-                                    setScanStatus(`Stabilizing... (${scanBufferRef.current.filter(b => b === barcode).length}/3)`);
+                                    setScanStatus(`Stabilizing... (${scanBufferRef.current.filter(b => b === normalizedBarcode).length}/3)`);
                                 }
                             } else {
                                 setScanStatus("Searching for barcode...");

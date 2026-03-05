@@ -12,7 +12,7 @@
 | Primary DB | MongoDB (+ Motor for async) |
 | Graph DB | Neo4j (SIMILAR_TO, BOUGHT_WITH relationships) |
 | Payments | Razorpay (test mode) |
-| Barcode | QuaggaJS (browser camera) |
+| Barcode | OpenCV + zxing-cpp + pyzbar (Dual-Engine backend pipeline) |
 
 ---
 
@@ -108,7 +108,7 @@ NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_...
 - **Face ID**: Register face during signup, login by looking at camera
 - **Intent Search**: "I have a cold" → surfaces Honey, Ginger Tea, Tulsi Drops
 - **Location**: Nearest shops auto-prioritized via GPS + geo-distance
-- **Barcode Scanner**: Sellers scan boxes to update inventory
+- **Pro Barcode Scanner**: High-accuracy dual-engine backend (OpenCV/ZXing) scanning with OpenFoodFacts auto-fill integration, featuring stateless JWT authentication for rapid zero-latency frame processing.
 - **Razorpay**: Test-mode payment checkout with signature verification
 
 ### Stage 2 — Automator

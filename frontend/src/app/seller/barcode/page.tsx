@@ -78,7 +78,10 @@ export default function BarcodeScanner() {
                             } else if (low_light) {
                                 setScanStatus("Too dark! Increase light 💡");
                             } else if (barcode) {
-                                scanBufferRef.current.push(barcode);
+                                // Normalize alphanumeric barcodes to remove noise/spaces
+                                const normalizedBarcode = barcode.trim().replace(/\s+/g, "").toUpperCase();
+
+                                scanBufferRef.current.push(normalizedBarcode);
                                 if (scanBufferRef.current.length > 10) scanBufferRef.current.shift();
 
                                 const counts: any = {};
@@ -91,7 +94,7 @@ export default function BarcodeScanner() {
                                 if (confirmed) {
                                     handleConfirmedBarcode(confirmed);
                                 } else {
-                                    setScanStatus(`Focusing... (${scanBufferRef.current.filter(b => b === barcode).length}/3)`);
+                                    setScanStatus(`Focusing... (${scanBufferRef.current.filter(b => b === normalizedBarcode).length}/3)`);
                                 }
                             } else {
                                 setScanStatus("Searching for barcode...");

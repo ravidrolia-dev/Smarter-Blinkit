@@ -5,6 +5,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export const api = axios.create({
     baseURL: API_BASE,
     headers: { "Content-Type": "application/json" },
+    timeout: 15000, // Explicit 15s timeout to catch hung backend requests smoothly
 });
 
 // Attach JWT token to every request
