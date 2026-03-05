@@ -64,6 +64,7 @@ export const ordersApi = {
 // ===== Inventory =====
 export const inventoryApi = {
     lookupBarcode: (barcode: string) => api.get(`/inventory/barcode/${barcode}`),
+    scanBarcode: (image_base64: string) => api.post("/inventory/scan", { image_base64 }),
     updateStock: (product_id: string, quantity_delta: number, note?: string) =>
         api.patch(`/inventory/${product_id}/stock`, { quantity_delta, note }),
     myProducts: () => api.get("/inventory/my-products"),

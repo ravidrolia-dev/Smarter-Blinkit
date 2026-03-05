@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { inventoryApi } from "@/lib/api";
 import toast from "react-hot-toast";
-import Quagga from "@ericblade/quagga2";
 
 export default function BarcodeScanner() {
     const [scanning, setScanning] = useState(false);
@@ -11,36 +10,123 @@ export default function BarcodeScanner() {
     const [product, setProduct] = useState<any | null>(null);
     const [delta, setDelta] = useState(0);
     const [loading, setLoading] = useState(false);
-    const scannerRef = useRef<HTMLDivElement>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [scanStatus, setScanStatus] = useState<string>("Initializing...");
+    const scanBufferRef = useRef<string[]>([]);
+    const isProcessingRef = useRef<boolean>(false);
 
-    const startScanner = () => {
-        if (!scannerRef.current) return;
-        Quagga.init({
-            inputStream: {
-                type: "LiveStream" as any,
-                target: scannerRef.current,
-                constraints: { facingMode: "environment" },
-            } as any,
-            decoder: { readers: ["ean_reader", "ean_8_reader", "code_128_reader", "code_39_reader", "upc_reader"] },
-            locate: true,
-        }, (err: any) => {
-            if (err) { toast.error("Camera error: " + err.message); return; }
-            Quagga.start();
-            setScanning(true);
-        });
-
-        Quagga.onDetected((result: any) => {
-            const code = result.codeResult.code;
-            Quagga.stop();
+    const startScanner = async () => {
+        setScanning(true);
+        setScanStatus("Accessing camera...");
+        scanBufferRef.current = [];
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: "environment",
+                    width: { ideal: 1920, min: 1280 },
+                    height: { ideal: 1080, min: 720 }
+                }
+            });
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                setScanStatus("Scanning...");
+            }
+        } catch (err) {
+            toast.error("Could not access camera");
             setScanning(false);
-            handleBarcode(code);
-        });
+        }
     };
 
     const stopScanner = () => {
-        try { Quagga.stop(); } catch { }
+        if (videoRef.current && videoRef.current.srcObject) {
+            const stream = videoRef.current.srcObject as MediaStream;
+            stream.getTracks().forEach(track => track.stop());
+            videoRef.current.srcObject = null;
+        }
         setScanning(false);
     };
+
+    const handleConfirmedBarcode = (barcode: string) => {
+        stopScanner();
+        handleBarcode(barcode);
+        toast.success(`Confirmed: ${barcode}!`, { icon: '🎯' });
+    };
+
+    useEffect(() => {
+        let interval: any;
+        if (scanning) {
+            interval = setInterval(async () => {
+                if (videoRef.current && canvasRef.current && scanning && !isProcessingRef.current) {
+                    const video = videoRef.current;
+                    const canvas = canvasRef.current;
+                    const context = canvas.getContext("2d");
+
+                    if (context && video.videoWidth > 0) {
+                        isProcessingRef.current = true;
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        const base64 = canvas.toDataURL("image/jpeg", 0.4);
+
+                        try {
+                            const res = await inventoryApi.scanBarcode(base64);
+                            const { barcode, is_blurry, low_light } = res.data;
+
+                            if (is_blurry) {
+                                setScanStatus("Analyzing... Keep steady ✋");
+                            } else if (low_light) {
+                                setScanStatus("Too dark! Increase light 💡");
+                            } else if (barcode) {
+                                scanBufferRef.current.push(barcode);
+                                if (scanBufferRef.current.length > 10) scanBufferRef.current.shift();
+
+                                const counts: any = {};
+                                let confirmed = null;
+                                for (const b of scanBufferRef.current) {
+                                    counts[b] = (counts[b] || 0) + 1;
+                                    if (counts[b] >= 3) { confirmed = b; break; }
+                                }
+
+                                if (confirmed) {
+                                    handleConfirmedBarcode(confirmed);
+                                } else {
+                                    setScanStatus(`Focusing... (${scanBufferRef.current.filter(b => b === barcode).length}/3)`);
+                                }
+                            } else {
+                                setScanStatus("Searching for barcode...");
+                            }
+                        } catch (err: any) {
+                            if (err.message === "Network Error") {
+                                setScanStatus("Connection problem! Retrying...");
+                                console.error("Axios Network Error - likely payload size or server timeout");
+                            } else {
+                                console.error("Scan error:", err);
+                            }
+                        } finally {
+                            isProcessingRef.current = false;
+                        }
+                    }
+                }
+            }, 500);
+        }
+        return () => {
+            clearInterval(interval);
+            if (!scanning) {
+                if (videoRef.current && videoRef.current.srcObject) {
+                    const stream = videoRef.current.srcObject as MediaStream;
+                    stream.getTracks().forEach(track => track.stop());
+                }
+            }
+        };
+    }, [scanning]);
+
+    useEffect(() => () => {
+        if (videoRef.current && videoRef.current.srcObject) {
+            const stream = videoRef.current.srcObject as MediaStream;
+            stream.getTracks().forEach(track => track.stop());
+        }
+    }, []);
 
     const handleBarcode = async (code: string) => {
         setScannedCode(code);
@@ -75,8 +161,6 @@ export default function BarcodeScanner() {
         } finally { setLoading(false); }
     };
 
-    useEffect(() => () => { try { Quagga.stop(); } catch { } }, []);
-
     return (
         <DashboardLayout role="seller">
             <h1 className="section-title" style={{ fontSize: 24 }}>📷 Barcode Scanner</h1>
@@ -86,17 +170,44 @@ export default function BarcodeScanner() {
                 {/* Camera Scanner */}
                 <div className="card-flat">
                     <h2 className="section-title" style={{ marginBottom: 16 }}>Camera Scanner</h2>
-                    <div ref={scannerRef}
-                        style={{ position: "relative", borderRadius: 16, overflow: "hidden", background: "#111", aspectRatio: "16/9", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div className="relative rounded-2xl overflow-hidden bg-black aspect-video flex items-center justify-center border-2 border-dashed border-gray-200 mb-4">
+                        <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
+                        <canvas ref={canvasRef} className="hidden" />
+
                         {!scanning && (
-                            <div style={{ color: "rgba(255,255,255,0.4)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                                <span style={{ fontSize: 36 }}>📷</span>
-                                <span style={{ fontSize: 14 }}>Camera not active</span>
+                            <div className="flex flex-col items-center gap-2 z-10 text-white/40">
+                                <span className="text-4xl text-gray-700">📷</span>
+                                <span className="text-sm font-bold uppercase tracking-wider text-gray-500">Camera inactive</span>
                             </div>
                         )}
-                        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                            <div style={{ width: "75%", height: 80, border: "3px dashed var(--yellow-primary)", borderRadius: 8, opacity: 0.7 }} />
-                        </div>
+
+                        {scanning && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+                                <div className="text-white bg-black/50 px-4 py-2 rounded-full text-[10px] font-black mb-3 backdrop-blur-md border border-white/20 uppercase tracking-widest">
+                                    {scanStatus}
+                                </div>
+                                <div className="w-56 h-28 border-2 border-yellow-400 rounded-xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+                                    <div className="absolute -top-1 -left-1 w-4 h-4 border-t-4 border-l-4 border-yellow-400 rounded-tl-md" />
+                                    <div className="absolute -top-1 -right-1 w-4 h-4 border-t-4 border-r-4 border-yellow-400 rounded-tr-md" />
+                                    <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-4 border-l-4 border-yellow-400 rounded-bl-md" />
+                                    <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-4 border-r-4 border-yellow-400 rounded-br-md" />
+                                    <div className="absolute left-0 top-0 w-full h-0.5 bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.8)] animate-scan-line" />
+                                </div>
+                            </div>
+                        )}
+
+                        <style dangerouslySetInnerHTML={{
+                            __html: `
+                            @keyframes scan-line {
+                                0% { top: 0%; opacity: 0; }
+                                10% { opacity: 1; }
+                                90% { opacity: 1; }
+                                100% { top: 100%; opacity: 0; }
+                            }
+                            .animate-scan-line {
+                                animation: scan-line 2s linear infinite;
+                            }
+                        ` }} />
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                         {!scanning

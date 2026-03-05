@@ -44,4 +44,4 @@ async def create_indexes():
     await orders.create_index("seller_id")
     await shops.create_index([("location", "2dsphere")])
 
-    print("✅ Database indexes created")
+    print("Database indexes created")

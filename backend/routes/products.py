@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+import os
 from database import get_products_collection
 from services.dependencies import get_current_user, require_seller
 from services.semantic_search import embed_text
-from services.neo4j_service import create_product_node, create_similar_to
+from services.neo4j_service import create_product_node, create_similar_to, sync_similar_products
 from bson import ObjectId
 from pydantic import BaseModel
 from typing import Optional, List
@@ -81,6 +82,9 @@ async def create_product(req: ProductCreate, seller=Depends(require_seller)):
     # Register in Neo4j for graph recommendations
     try:
         create_product_node(product_id, req.name, req.category, req.tags)
+        # Background sync for similar products
+        import asyncio
+        asyncio.create_task(sync_similar_products(product_id, req.name, req.category, embedding))
     except Exception:
         pass
 
@@ -129,24 +133,52 @@ async def update_product(product_id: str, req: ProductUpdate, seller=Depends(req
     return {"message": "Product updated"}
 
 @router.get("/{product_id}/recommendations")
-async def get_recommendations(product_id: str):
+async def get_recommendations_endpoint(product_id: str):
     """Graph-based recommendations using Neo4j BOUGHT_WITH + SIMILAR_TO."""
     from services.neo4j_service import get_recommendations
-    recs = get_recommendations(product_id)
+    
+    products_col = get_products_collection()
+    product = await products_col.find_one({"_id": ObjectId(product_id)})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
 
-    if not recs:
+    graph_recs = get_recommendations(product_id)
+    
+    # Enrich with MongoDB data
+    all_ids = [ObjectId(rid) for rid in (graph_recs["similar"] + graph_recs["bought_with"])]
+    enriched_products = {}
+    if all_ids:
+        cursor = products_col.find({"_id": {"$in": all_ids}})
+        async for p in cursor:
+            pid = str(p["_id"])
+            enriched_products[pid] = format_product(p)
+
+    # Separate and format
+    similar = [enriched_products[rid] for rid in graph_recs["similar"] if rid in enriched_products]
+    bought_with = [enriched_products[rid] for rid in graph_recs["bought_with"] if rid in enriched_products]
+
+    # Rule: If stock == 0, prioritize similar products (already the primary goal)
+    # We will ensure the frontend handles the visual prioritization
+    
+    if not similar and not bought_with:
         # Fallback: same category products
-        products_col = get_products_collection()
-        product = await products_col.find_one({"_id": ObjectId(product_id)})
-        if product:
-            cursor = products_col.find({
-                "category": product.get("category"),
-                "_id": {"$ne": ObjectId(product_id)}
-            }).limit(6)
-            fallback = await cursor.to_list(length=6)
-            return {"source": "category_fallback", "recommendations": [format_product(p) for p in fallback]}
+        cursor = products_col.find({
+            "category": product.get("category"),
+            "_id": {"$ne": ObjectId(product_id)}
+        }).limit(8)
+        fallback = await cursor.to_list(length=8)
+        return {
+            "source": "category_fallback", 
+            "similar": [format_product(p) for p in fallback],
+            "bought_with": []
+        }
 
-    return {"source": "neo4j_graph", "recommendations": recs}
+    return {
+        "source": "neo4j_graph",
+        "similar": similar,
+        "bought_with": bought_with,
+        "is_out_of_stock": product.get("stock", 0) <= 0
+    }
 
 @router.delete("/{product_id}")
 async def delete_product(product_id: str, seller=Depends(require_seller)):

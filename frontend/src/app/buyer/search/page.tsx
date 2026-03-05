@@ -5,6 +5,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { searchApi } from "@/lib/api";
 import { useLocation } from "@/hooks/useLocation";
 import toast from "react-hot-toast";
+import Link from "next/link";
 
 // ─── Inner component that uses useSearchParams ─────────────────────────────
 function SearchInner() {
@@ -85,24 +86,28 @@ function SearchInner() {
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }} className="stagger">
                         {results.map((p) => (
                             <div key={p.id} className="product-card animate-fade-up">
-                                <div style={{ height: 144, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--yellow-subtle)", fontSize: 40 }}>
-                                    {p.image_url ? <img src={p.image_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "🛒"}
-                                </div>
-                                <div style={{ padding: 16 }}>
-                                    <p style={{ fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</p>
-                                    <p style={{ fontSize: 12, color: "var(--gray-400)", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.description?.slice(0, 40)}</p>
-                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                                        <span style={{ fontWeight: 900 }}>₹{p.price}</span>
-                                        <span style={{ fontSize: 12, color: "var(--gray-400)" }}>{p.unit}</span>
+                                <Link href={`/buyer/product/${p.id}`} style={{ textDecoration: "none", color: "inherit" }}>
+                                    <div style={{ height: 144, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--yellow-subtle)", fontSize: 40 }}>
+                                        {p.image_url ? <img src={p.image_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "🛒"}
                                     </div>
-                                    {p.distance_km && <p style={{ fontSize: 12, color: "var(--gray-400)", marginTop: 4 }}>📍 {p.distance_km} km</p>}
-                                    {p._score && (
-                                        <div style={{ marginTop: 8, height: 4, background: "var(--yellow-light)", borderRadius: 99, overflow: "hidden" }}>
-                                            <div style={{ height: "100%", background: "var(--yellow-primary)", width: `${Math.round(p._score * 100)}%`, borderRadius: 99 }} />
+                                    <div style={{ padding: 16 }}>
+                                        <p style={{ fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</p>
+                                        <p style={{ fontSize: 12, color: "var(--gray-400)", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.description?.slice(0, 40)}</p>
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                            <span style={{ fontWeight: 900 }}>₹{p.price}</span>
+                                            <span style={{ fontSize: 12, color: "var(--gray-400)" }}>{p.unit}</span>
                                         </div>
-                                    )}
+                                        {p.distance_km && <p style={{ fontSize: 12, color: "var(--gray-400)", marginTop: 4 }}>📍 {p.distance_km} km</p>}
+                                        {p._score && (
+                                            <div style={{ marginTop: 8, height: 4, background: "var(--yellow-light)", borderRadius: 99, overflow: "hidden" }}>
+                                                <div style={{ height: "100%", background: "var(--yellow-primary)", width: `${Math.round(p._score * 100)}%`, borderRadius: 99 }} />
+                                            </div>
+                                        )}
+                                    </div>
+                                </Link>
+                                <div style={{ padding: "0 16px 16px" }}>
                                     <button onClick={() => addToCart(p)} className="btn-primary"
-                                        style={{ width: "100%", marginTop: 12, padding: "8px", fontSize: 12 }}>
+                                        style={{ width: "100%", padding: "8px", fontSize: 12 }}>
                                         + Add to Cart
                                     </button>
                                 </div>

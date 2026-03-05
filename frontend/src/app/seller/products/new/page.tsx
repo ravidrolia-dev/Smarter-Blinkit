@@ -1,7 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { productsApi } from "@/lib/api";
+import { productsApi, inventoryApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -19,6 +19,141 @@ export default function AddProductPage() {
         stock: "", unit: "piece", image_url: "", tags: "",
         lat: "", lng: "",
     });
+    const [scanning, setScanning] = useState(false);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [scanStatus, setScanStatus] = useState<string>("Initializing...");
+    const scanBufferRef = useRef<string[]>([]);
+    const isProcessingRef = useRef<boolean>(false);
+
+    const startScanner = async () => {
+        setScanning(true);
+        setScanStatus("Accessing camera...");
+        scanBufferRef.current = [];
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: "environment",
+                    width: { ideal: 1920, min: 1280 },
+                    height: { ideal: 1080, min: 720 }
+                }
+            });
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                setScanStatus("Scanning...");
+            }
+        } catch (err) {
+            toast.error("Could not access camera");
+            setScanning(false);
+        }
+    };
+
+    const stopScanner = () => {
+        if (videoRef.current && videoRef.current.srcObject) {
+            const stream = videoRef.current.srcObject as MediaStream;
+            stream.getTracks().forEach(track => track.stop());
+            videoRef.current.srcObject = null;
+        }
+        setScanning(false);
+    };
+
+    const handleConfirmedBarcode = async (barcode: string) => {
+        set("barcode", barcode);
+        toast.success(`Confirmed: ${barcode}! Searching details...`, { icon: '🔍' });
+        stopScanner();
+
+        // Professional Auto-Fill with OpenFoodFacts integration
+        try {
+            const res = await inventoryApi.lookupBarcode(barcode);
+            if (res.data.found) {
+                const p = res.data.product;
+                setForm(prev => ({
+                    ...prev,
+                    name: p.name || prev.name,
+                    brand: p.brand || "",
+                    category: p.category || prev.category,
+                    image_url: p.image || prev.image_url,
+                    barcode: barcode
+                }));
+                toast.success("Product details auto-filled! ✨");
+            }
+        } catch (err) {
+            // Not found in DB or OFF - manual entry remains
+            console.log("No external details found for this barcode.");
+        }
+    };
+
+    useEffect(() => {
+        let interval: any;
+        if (scanning) {
+            interval = setInterval(async () => {
+                if (videoRef.current && canvasRef.current && scanning && !isProcessingRef.current) {
+                    const video = videoRef.current;
+                    const canvas = canvasRef.current;
+                    const context = canvas.getContext("2d");
+
+                    if (context && video.videoWidth > 0) {
+                        isProcessingRef.current = true;
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        const base64 = canvas.toDataURL("image/jpeg", 0.4); // Lower quality for better throughput
+
+                        try {
+                            const res = await inventoryApi.scanBarcode(base64);
+                            const { barcode, is_blurry, low_light } = res.data;
+
+                            if (is_blurry) {
+                                setScanStatus("Analyzing... Hold steady ✋");
+                            } else if (low_light) {
+                                setScanStatus("Too dark! Increase light 💡");
+                            } else if (barcode) {
+                                scanBufferRef.current.push(barcode);
+                                if (scanBufferRef.current.length > 10) scanBufferRef.current.shift();
+
+                                // Multi-frame confirmation: Check if barcode appears 3 times in last 10 frames
+                                const counts: any = {};
+                                let confirmed = null;
+                                for (const b of scanBufferRef.current) {
+                                    counts[b] = (counts[b] || 0) + 1;
+                                    if (counts[b] >= 3) {
+                                        confirmed = b;
+                                        break;
+                                    }
+                                }
+
+                                if (confirmed) {
+                                    handleConfirmedBarcode(confirmed);
+                                } else {
+                                    setScanStatus(`Stabilizing... (${scanBufferRef.current.filter(b => b === barcode).length}/3)`);
+                                }
+                            } else {
+                                setScanStatus("Searching for barcode...");
+                            }
+                        } catch (err: any) {
+                            if (err.message === "Network Error") {
+                                setScanStatus("Connection Lost! Retrying...");
+                                console.error("Axios Network Error - likely payload size or server timeout");
+                            } else {
+                                console.error("Scan error:", err);
+                            }
+                        } finally {
+                            isProcessingRef.current = false;
+                        }
+                    }
+                }
+            }, 500); // More conservative sampling frequency (500ms)
+        }
+        return () => {
+            clearInterval(interval);
+            if (!scanning) {
+                if (videoRef.current && videoRef.current.srcObject) {
+                    const stream = videoRef.current.srcObject as MediaStream;
+                    stream.getTracks().forEach(track => track.stop());
+                }
+            }
+        };
+    }, [scanning]);
 
     const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -134,8 +269,17 @@ export default function AddProductPage() {
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="text-xs font-semibold text-gray-500 mb-1 block uppercase tracking-wide">Barcode (optional)</label>
-                                <input className="input font-mono" value={form.barcode} onChange={(e) => set("barcode", e.target.value)}
-                                    placeholder="8901234567890" />
+                                <div className="flex gap-2">
+                                    <input className="input font-mono flex-1" value={form.barcode} onChange={(e) => set("barcode", e.target.value)}
+                                        placeholder="8901234567890" />
+                                    <button
+                                        type="button"
+                                        onClick={scanning ? stopScanner : startScanner}
+                                        className={`px-4 rounded-xl border flex items-center gap-2 transition-all ${scanning ? 'bg-red-50 border-red-200 text-red-600' : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'}`}
+                                    >
+                                        {scanning ? '⏹ Stop' : '📷 Scan'}
+                                    </button>
+                                </div>
                             </div>
                             <div>
                                 <label className="text-xs font-semibold text-gray-500 mb-1 block uppercase tracking-wide">Image URL (optional)</label>
@@ -143,6 +287,53 @@ export default function AddProductPage() {
                                     placeholder="https://..." />
                             </div>
                         </div>
+
+                        {scanning && (
+                            <div className="mt-4">
+                                <label className="text-xs font-semibold text-gray-500 mb-2 block uppercase tracking-wide">AI-Powered Scanner</label>
+                                <div className="relative rounded-2xl overflow-hidden bg-black aspect-video flex items-center justify-center border-2 border-dashed border-gray-200">
+                                    <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
+                                    <canvas ref={canvasRef} className="hidden" />
+
+                                    {/* Scan Box Overlay */}
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+                                        <div className="text-white bg-black/50 px-4 py-2 rounded-full text-xs font-bold mb-4 backdrop-blur-md border border-white/20">
+                                            {scanStatus}
+                                        </div>
+                                        <div className="w-64 h-32 border-2 border-yellow-400 rounded-2xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+                                            <div className="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-yellow-400 rounded-tl-lg" />
+                                            <div className="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-yellow-400 rounded-tr-lg" />
+                                            <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-yellow-400 rounded-bl-lg" />
+                                            <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-yellow-400 rounded-br-lg" />
+
+                                            {/* Scanning Line Animation */}
+                                            <div className="absolute left-0 top-0 w-full h-0.5 bg-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.8)] animate-scan-line" />
+                                        </div>
+                                        <p className="text-white/70 text-[10px] uppercase font-black tracking-widest mt-6 drop-shadow-md">
+                                            Align barcode within box
+                                        </p>
+                                    </div>
+
+                                    <style dangerouslySetInnerHTML={{
+                                        __html: `
+                                        @keyframes scan-line {
+                                            0% { top: 0%; opacity: 0; }
+                                            10% { opacity: 1; }
+                                            90% { opacity: 1; }
+                                            100% { top: 100%; opacity: 0; }
+                                        }
+                                        .animate-scan-line {
+                                            animation: scan-line 2s linear infinite;
+                                        }
+                                    ` }} />
+                                </div>
+                                <div className="mt-3 flex gap-4 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                                    <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" /> Auto Resolution</div>
+                                    <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" /> OpenCV Preprocessing</div>
+                                    <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-pulse" /> Neural Recovery</div>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="card-flat">

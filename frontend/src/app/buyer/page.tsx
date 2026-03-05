@@ -138,30 +138,33 @@ function ProductCard({ product }: { product: any }) {
         toast_mod.success(`${product.name} added to cart!`);
     };
 
+    const id = product.id || product._id;
     return (
         <div className="product-card animate-fade-up">
-            <div className="product-card-img flex items-center justify-center text-5xl bg-yellow-50">
-                {product.image_url ? (
-                    <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
-                ) : (
-                    <span>{getCategoryEmoji(product.category)}</span>
-                )}
-            </div>
-            <div className="product-card-body">
-                <p className="font-bold text-gray-900 text-sm truncate">{product.name}</p>
-                <p className="text-xs text-gray-400 mb-2 truncate">{product.category}</p>
-                <div className="flex items-center justify-between">
-                    <span className="font-black text-gray-900">₹{product.price}</span>
-                    <button onClick={addToCart}
-                        className="text-xs font-bold px-3 py-1.5 rounded-lg transition-all"
-                        style={{ background: "var(--yellow-primary)", color: "#111" }}>
-                        + Add
-                    </button>
+            <Link href={`/buyer/product/${id}`} style={{ textDecoration: "none", color: "inherit" }}>
+                <div className="product-card-img flex items-center justify-center text-5xl bg-yellow-50">
+                    {product.image_url ? (
+                        <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+                    ) : (
+                        <span>{getCategoryEmoji(product.category)}</span>
+                    )}
                 </div>
-                {product.distance_km && (
-                    <p className="text-xs text-gray-400 mt-1">📍 {product.distance_km} km away</p>
-                )}
-            </div>
+                <div className="product-card-body">
+                    <p className="font-bold text-gray-900 text-sm truncate">{product.name}</p>
+                    <p className="text-xs text-gray-400 mb-2 truncate">{product.category}</p>
+                    <div className="flex items-center justify-between">
+                        <span className="font-black text-gray-900">₹{product.price}</span>
+                        <button onClick={addToCart}
+                            className="text-xs font-bold px-3 py-1.5 rounded-lg transition-all"
+                            style={{ background: "var(--yellow-primary)", color: "#111" }}>
+                            + Add
+                        </button>
+                    </div>
+                    {product.distance_km && (
+                        <p className="text-xs text-gray-400 mt-1">📍 {product.distance_km} km away</p>
+                    )}
+                </div>
+            </Link>
         </div>
     );
 }

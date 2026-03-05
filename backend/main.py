@@ -14,18 +14,18 @@ def _preload_model():
         from services.semantic_search import get_model
         get_model()
     except Exception as e:
-        print(f"⚠️ Semantic model preload failed: {e}")
+        print(f"Semantic model preload failed: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 Smarter BlinkIt API starting up...")
+    print("Smarter BlinkIt API starting up...")
     # Kick off model loading in a daemon background thread — does NOT block server startup.
     # First search request will use the cached model once it finishes loading (~30s).
     import threading
     t = threading.Thread(target=_preload_model, daemon=True, name="model-preload")
     t.start()
     yield
-    print("🛑 Smarter BlinkIt API shutting down...")
+    print("Smarter BlinkIt API shutting down...")
 
 app = FastAPI(
     title="Smarter BlinkIt API",
@@ -59,3 +59,7 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -20,16 +20,16 @@ try:
     from sentence_transformers import SentenceTransformer
     SEMANTIC_AVAILABLE = True
 except ImportError:
-    print("⚠️  sentence-transformers not installed — keyword fallback active.")
+    print("sentence-transformers not installed - keyword fallback active.")
 
 
 def get_model() -> "SentenceTransformer":
     global _model
     if _model is None:
-        print("🔄 Loading sentence-transformers model (cached after first load)…")
+        print("Loading sentence-transformers model (cached after first load)...")
         from sentence_transformers import SentenceTransformer
         _model = SentenceTransformer("all-MiniLM-L6-v2")
-        print("✅ Semantic model loaded.")
+        print("Semantic model loaded.")
     return _model
 
 
