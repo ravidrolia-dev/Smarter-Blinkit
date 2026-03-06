@@ -81,33 +81,23 @@ async def ultimate_image_fix():
     BAD_DOMAINS = ["openbeautyfacts.org", "openfoodfacts.org", "flaticon.com", "example.com", "m.media-amazon.com"]
 
     for product in all_products:
-        url = product.get("image_url", "")
         name = product.get("name", "Unknown")
         cat = product.get("category", "General")
         
-        needs_fix = False
-        if not url:
-            needs_fix = True
-        else:
-            for domain in BAD_DOMAINS:
-                if domain in url:
-                    needs_fix = True
-                    break
+        # FORCED REVERT: Resetting everyone
+        # Pick from category pool
+        pool = pools.get(cat, pools["General"])
+        if not pool: pool = pools["General"] + UNSPLASH_FALLBACKS
         
-        if needs_fix:
-            # Pick from category pool
-            pool = pools.get(cat, pools["General"])
-            if not pool: pool = pools["General"] + UNSPLASH_FALLBACKS
-            
-            new_url = random.choice(pool) if pool else random.choice(UNSPLASH_FALLBACKS)
-            
-            await products_col.update_one(
-                {"_id": product["_id"]},
-                {"$set": {"image_url": new_url}}
-            )
-            fixed_count += 1
-            if fixed_count % 20 == 0:
-                print(f"  [✓] Fixed {fixed_count} images...")
+        new_url = random.choice(pool) if pool else random.choice(UNSPLASH_FALLBACKS)
+        
+        await products_col.update_one(
+            {"_id": product["_id"]},
+            {"$set": {"image_url": new_url}}
+        )
+        fixed_count += 1
+        if fixed_count % 50 == 0:
+            print(f"  [✓] Reset {fixed_count} images...")
 
     print(f"\nUltimate Update Job Complete!")
     print(f"Total fixed: {fixed_count} products now have guaranteed working images.")
