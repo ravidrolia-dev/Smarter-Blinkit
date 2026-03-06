@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 import os
-from database import get_products_collection
+from database import get_products_collection, get_users_collection
 from services.dependencies import get_current_user, require_seller
 from services.semantic_search import embed_text
 from services.neo4j_service import create_product_node, create_similar_to, sync_similar_products
@@ -15,6 +15,7 @@ class ProductCreate(BaseModel):
     name: str
     description: str
     price: float
+    mrp: Optional[float] = None
     category: str
     barcode: Optional[str] = None
     stock: int = 0
@@ -23,12 +24,17 @@ class ProductCreate(BaseModel):
     tags: List[str] = []
     lat: Optional[float] = None
     lng: Optional[float] = None
+    address: Optional[str] = None
 
 class ProductUpdate(BaseModel):
+    name: Optional[str] = None
     price: Optional[float] = None
     stock: Optional[int] = None
     description: Optional[str] = None
+    category: Optional[str] = None
     image_url: Optional[str] = None
+    unit: Optional[str] = None
+    barcode: Optional[str] = None
 
 def haversine_km(lat1, lon1, lat2, lon2):
     R = 6371
@@ -48,6 +54,10 @@ def format_product(p, buyer_lat=None, buyer_lng=None):
 
 @router.post("", status_code=201)
 async def create_product(req: ProductCreate, seller=Depends(require_seller)):
+    users_col = get_users_collection()
+    user_doc = await users_col.find_one({"_id": seller["_id"]})
+    seller_name = user_doc.get("name", "Unknown Seller") if user_doc else "Unknown Seller"
+
     products_col = get_products_collection()
 
     # Generate semantic embedding
@@ -62,6 +72,7 @@ async def create_product(req: ProductCreate, seller=Depends(require_seller)):
         "name": req.name,
         "description": req.description,
         "price": req.price,
+        "mrp": getattr(req, "mrp", None),
         "category": req.category,
         "barcode": req.barcode,
         "stock": req.stock,
@@ -69,8 +80,9 @@ async def create_product(req: ProductCreate, seller=Depends(require_seller)):
         "image_url": req.image_url,
         "tags": req.tags,
         "seller_id": str(seller["_id"]),
-        "seller_name": seller["name"],
+        "seller_name": seller_name,
         "location": location,
+        "address": getattr(req, "address", None),
         "embedding": embedding,
         "rating": 0.0,
         "total_sold": 0,

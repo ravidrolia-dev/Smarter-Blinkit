@@ -3,13 +3,15 @@ import numpy as np
 import base64
 import asyncio
 from functools import partial
-from scipy.spatial.distance import cosine
+
+# Initialize the legacy Haar Cascade classifier
+face_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+)
 
 def _encode_face_sync(image_base64: str):
-    """Synchronous face encoding — run in thread pool to avoid blocking event loop."""
+    """Legacy Synchronous face encoding using basic OpenCV cropping. No strict checks."""
     try:
-        from deepface import DeepFace
-
         # Handle both plain base64 and data URL formats
         if "," in image_base64:
             img_data = base64.b64decode(image_base64.split(",")[1])
@@ -22,55 +24,46 @@ def _encode_face_sync(image_base64: str):
         if img is None:
             return None
 
-        # Extract highly robust embedding (ArcFace handles large pose/lighting variations)
-        # align=True corrects face angle
-        # enforce_detection=True ensures there is actually a face
-        objs = DeepFace.represent(
-            img_path=img, 
-            model_name="ArcFace", 
-            detector_backend="opencv", 
-            enforce_detection=True, 
-            align=True
-        )
+        # Basic grayscale conversion and histogram equalization
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.equalizeHist(gray)
         
-        if not objs or len(objs) == 0:
-            return None
-            
-        return objs[0]["embedding"]
-    except ValueError as e:
-        print("Face detection failed (No face found):", e)
-        return None
-    except Exception as e:
-        print("Error during face encoding:", e)
-        return None
+        # Detect faces with legacy Haar Cascade
+        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
+        if len(faces) == 0:
+            return None
+
+        # Take the first detected face, crop and resize
+        (x, y, w, h) = faces[0]
+        face = gray[y:y+h, x:x+w]
+        face = cv2.resize(face, (100, 100))
+        
+        # Store as flattened grayscale array (10,000 dimensions)
+        return face.flatten().tolist()
+    except Exception as e:
+        print(f"Legacy encoding error: {e}")
+        return None
 
 async def encode_face_from_base64(image_base64: str):
-    """Async wrapper — runs DeepFace in a thread pool so it doesn't freeze the server."""
+    """Async wrapper for the legacy encoding logic."""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, partial(_encode_face_sync, image_base64))
 
-
 def compare_face(known_encoding, new_encoding_list) -> float:
-    """
-    Compare two ArcFace embeddings using Cosine Distance.
-    Returns the distance (0.0 is perfect match, 2.0 is opposite).
-    Lower distance means a better match.
-    """
+    """Legacy comparison using Template Matching (Correlation). Higher is better."""
     if known_encoding is None or new_encoding_list is None:
-        return 10.0
+        return -1.0
     try:
-        a = np.array(known_encoding, dtype=np.float32)
-        b = np.array(new_encoding_list, dtype=np.float32)
-
-        # Protect against old 10,000-dimensional OpenCV flattened arrays
-        if len(a) != len(b):
-            print(f"Dimension mismatch: {len(a)} vs {len(b)}")
-            return 10.0
+        # Reconstruct the 100x100 grayscale images from the flattened lists
+        known = np.array(known_encoding, dtype=np.uint8).reshape((100, 100))
+        new = np.array(new_encoding_list, dtype=np.uint8).reshape((100, 100))
         
-        distance = cosine(a, b)
-        print(f"Face Match Distance (Cosine): {distance:.4f}")
-        return float(distance)
+        # Use TM_CCOEFF_NORMED for brightness/contrast robustness
+        res = cv2.matchTemplate(known, new, cv2.TM_CCOEFF_NORMED)
+        match_score = float(res[0][0])
+        print(f"Legacy Face Match Score: {match_score:.4f}")
+        return match_score
     except Exception as e:
-        print("Error comparing faces:", e)
-        return 10.0
+        print("Legacy comparison error:", e)
+        return -1.0

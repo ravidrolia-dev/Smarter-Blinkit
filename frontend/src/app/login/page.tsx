@@ -27,7 +27,9 @@ export default function LoginPage() {
             login(res.data.access_token, res.data.user);
             toast.success(`Welcome back, ${res.data.user.name}! 👋`);
         } catch (err: any) {
-            toast.error(err.response?.data?.detail || "Login failed");
+            let detail = err.response?.data?.detail || "Login failed";
+            if (typeof detail !== "string") detail = JSON.stringify(detail);
+            toast.error(detail);
         } finally {
             setLoading(false);
         }
@@ -51,20 +53,29 @@ export default function LoginPage() {
 
     const handleFaceLogin = async () => {
         if (!videoRef.current || !canvasRef.current) return;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext("2d");
-        canvas.width = videoRef.current.videoWidth;
-        canvas.height = videoRef.current.videoHeight;
-        ctx?.drawImage(videoRef.current, 0, 0);
-        const b64 = canvas.toDataURL("image/jpeg", 0.8);
-        stopCamera();
         setLoading(true);
+
         try {
-            const res = await authApi.faceLogin(b64);
+            const canvas = canvasRef.current;
+            const ctx = canvas.getContext("2d");
+            canvas.width = videoRef.current.videoWidth;
+            canvas.height = videoRef.current.videoHeight;
+
+            // Capture 1 frame for fast processing
+            ctx?.drawImage(videoRef.current, 0, 0);
+            const frame = canvas.toDataURL("image/jpeg", 0.8);
+
+            stopCamera();
+            const res = await authApi.faceLogin(frame);
             login(res.data.access_token, res.data.user);
+
             toast.success(`Face recognized! Welcome ${res.data.user.name} 😊`);
         } catch (err: any) {
-            toast.error(err.response?.data?.detail || "Face not recognized");
+            let detail = err.response?.data?.detail || "Face not recognized";
+            if (typeof detail !== "string") detail = JSON.stringify(detail);
+            toast.error(detail);
+            // If it failed, restart camera so they can try again
+            if (!faceCapturing) startCamera();
         } finally {
             setLoading(false);
         }
@@ -107,7 +118,7 @@ export default function LoginPage() {
                     {/* Role Selector */}
                     <div className="flex gap-2 p-1 bg-gray-100 rounded-xl mb-6">
                         {(["buyer", "seller"] as const).map((r) => (
-                            <button key={r} onClick={() => setRole(r)}
+                            <button key={r} onClick={() => setRole(r)} suppressHydrationWarning
                                 className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all capitalize ${role === r ? "bg-white shadow text-gray-900" : "text-gray-500"
                                     }`}>
                                 {r === "buyer" ? "🛒 Buyer" : "🏪 Seller"}

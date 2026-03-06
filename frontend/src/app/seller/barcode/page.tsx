@@ -64,10 +64,15 @@ export default function BarcodeScanner() {
 
                     if (context && video.videoWidth > 0) {
                         isProcessingRef.current = true;
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
+
+                        // Limit resolution for backend processing (barcodes don't need HD)
+                        const MAX_SCAN_WIDTH = 800;
+                        const scale = Math.min(1, MAX_SCAN_WIDTH / video.videoWidth);
+                        canvas.width = video.videoWidth * scale;
+                        canvas.height = video.videoHeight * scale;
+
                         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                        const base64 = canvas.toDataURL("image/jpeg", 0.4);
+                        const base64 = canvas.toDataURL("image/jpeg", 0.5);
 
                         try {
                             const res = await inventoryApi.scanBarcode(base64);
@@ -100,9 +105,10 @@ export default function BarcodeScanner() {
                                 setScanStatus("Searching for barcode...");
                             }
                         } catch (err: any) {
-                            if (err.message === "Network Error") {
+                            if (err.code === "ECONNABORTED" || err.message?.includes("timeout")) {
+                                setScanStatus("Server slow! Move camera slightly ⏱️");
+                            } else if (err.message === "Network Error") {
                                 setScanStatus("Connection problem! Retrying...");
-                                console.error("Axios Network Error - likely payload size or server timeout");
                             } else {
                                 console.error("Scan error:", err);
                             }
@@ -111,7 +117,7 @@ export default function BarcodeScanner() {
                         }
                     }
                 }
-            }, 500);
+            }, 800);
         }
         return () => {
             clearInterval(interval);

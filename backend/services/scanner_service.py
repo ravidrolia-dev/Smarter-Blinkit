@@ -3,6 +3,7 @@ import numpy as np
 import base64
 import zxingcpp
 import asyncio
+import time
 from functools import partial
 
 # Let ZXing use its default configuration which scans all formats including ITF, Code128, etc.
@@ -129,6 +130,7 @@ def _decode_barcode_sync(image_base64: str):
     Professional-grade scanning pipeline.
     Returns: (barcode_text, metadata_dict)
     """
+    start_time = time.time()
     metadata = {
         "barcode": None,
         "low_light": False,
@@ -189,7 +191,11 @@ def _decode_barcode_sync(image_base64: str):
 
         # 5. ROI Based Decoding (Targeted)
         rois = detect_roi(gray)
-        for roi in rois:
+        # Limit to top 4 largest ROIs to prevent explosion of work
+        for roi in rois[:4]:
+            # Abort if we are taking too long overall
+            if time.time() - start_time > 8.0: break
+            
             # Try original and preprocessed ROI
             results = zxingcpp.read_barcodes(roi)
             if not results:
@@ -198,30 +204,49 @@ def _decode_barcode_sync(image_base64: str):
             
             if results:
                 metadata["barcode"] = format_barcode_result(results[0])
+                print(f"DEBUG: Scanned via ROI in {time.time()-start_time:.3f}s")
                 return metadata
 
-        # 6. Final Resort: Upscale + Canny + Zxing
-        upscaled = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_LANCZOS4)
-        edges = cv2.Canny(upscaled, 100, 200)
-        results = zxingcpp.read_barcodes(edges)
-        if results:
-            metadata["barcode"] = format_barcode_result(results[0])
-            return metadata
-
-        # 7. Ultimate Fallback: The PyZbar Engine (Slower but handles some dense codes Zxing hates)
-        try:
-            from pyzbar.pyzbar import decode as pyzbar_decode
-            pyz_results = pyzbar_decode(gray)
-            if pyz_results:
-                metadata["barcode"] = pyz_results[0].data.decode('utf-8')
+        # 6. Final Resort: Upscale + Canny + Zxing (Only on central crop to save time)
+        if time.time() - start_time < 10.0:
+            h, w = gray.shape
+            center_gray = gray[h//4:3*h//4, w//4:3*w//4]
+            # Fast Linear interpolation
+            upscaled = cv2.resize(center_gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_LINEAR)
+            edges = cv2.Canny(upscaled, 100, 200)
+            results = zxingcpp.read_barcodes(edges)
+            if results:
+                metadata["barcode"] = format_barcode_result(results[0])
+                print(f"DEBUG: Scanned via Canny in {time.time()-start_time:.3f}s")
                 return metadata
-        except Exception:
-            pass
+
+        # 7. Ultimate Fallback: The PyZbar Engine (Run on downscaled to avoid 10s hangs)
+        if time.time() - start_time < 12.0:
+            try:
+                from pyzbar.pyzbar import decode as pyzbar_decode
+                # Downscale for pyzbar if too large
+                h, w = gray.shape
+                if w > 640:
+                    pyz_img = cv2.resize(gray, (640, int(h * 640/w)))
+                else:
+                    pyz_img = gray
+                    
+                pyz_results = pyzbar_decode(pyz_img)
+                if pyz_results:
+                    metadata["barcode"] = pyz_results[0].data.decode('utf-8')
+                    print(f"DEBUG: Scanned via PyZbar in {time.time()-start_time:.3f}s")
+                    return metadata
+            except Exception:
+                pass
             
         return metadata
     except Exception as e:
         print(f"Error in professional scanning pipeline: {e}")
         return metadata
+    finally:
+        elapsed = time.time() - start_time
+        if elapsed > 1.0:
+            print(f"WARNING: Barcode scan took {elapsed:.3f}s")
 
 async def decode_barcode(image_base64: str):
     """Async wrapper for professional barcode decoding."""

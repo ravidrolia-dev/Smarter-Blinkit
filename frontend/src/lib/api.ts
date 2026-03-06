@@ -46,6 +46,7 @@ export const productsApi = {
     update: (id: string, data: any) => api.patch(`/products/${id}`, data),
     delete: (id: string) => api.delete(`/products/${id}`),
     recommendations: (id: string) => api.get(`/products/${id}/recommendations`),
+    generateBarcode: () => api.post("/inventory/generate-barcode"),
 };
 
 // ===== Search =====
@@ -65,10 +66,11 @@ export const ordersApi = {
 // ===== Inventory =====
 export const inventoryApi = {
     lookupBarcode: (barcode: string) => api.get(`/inventory/barcode/${barcode}`),
-    scanBarcode: (image_base64: string) => api.post("/inventory/scan", { image_base64 }),
+    scanBarcode: (image_base64: string) => api.post("/inventory/scan", { image_base64 }, { timeout: 30000 }),
     updateStock: (product_id: string, quantity_delta: number, note?: string) =>
         api.patch(`/inventory/${product_id}/stock`, { quantity_delta, note }),
     myProducts: () => api.get("/inventory/my-products"),
+    getBarcodeImage: (barcode: string) => api.get(`/inventory/barcode-image/${barcode}`),
 };
 
 // ===== Agent =====

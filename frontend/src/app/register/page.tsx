@@ -10,7 +10,7 @@ export default function RegisterPage() {
     const [role, setRole] = useState<"buyer" | "seller">("buyer");
     const [form, setForm] = useState({ name: "", email: "", password: "", phone: "" });
     const [loading, setLoading] = useState(false);
-    const [faceB64, setFaceB64] = useState<string | null>(null);
+    const [faceFrame, setFaceFrame] = useState<string | null>(null);
     const [cameraOn, setCameraOn] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -19,7 +19,7 @@ export default function RegisterPage() {
 
     // Auto-start camera when reaching Face ID step
     useEffect(() => {
-        if (step === 2 && !cameraOn && !faceB64) {
+        if (step === 2 && !cameraOn && !faceFrame) {
             startCamera();
         }
     }, [step]);
@@ -38,27 +38,56 @@ export default function RegisterPage() {
     const capturePhoto = () => {
         if (!videoRef.current || !canvasRef.current) return;
         const canvas = canvasRef.current;
+        const ctx = canvas.getContext("2d");
         canvas.width = videoRef.current.videoWidth;
         canvas.height = videoRef.current.videoHeight;
-        canvas.getContext("2d")?.drawImage(videoRef.current, 0, 0);
-        setFaceB64(canvas.toDataURL("image/jpeg", 0.8));
+        ctx?.drawImage(videoRef.current, 0, 0);
+
+        const frame = canvas.toDataURL("image/jpeg", 0.8);
+        setFaceFrame(frame);
+
+        stopCamera();
+        toast.success("Face captured! ✅");
+    };
+
+    const stopCamera = () => {
         streamRef.current?.getTracks().forEach((t) => t.stop());
         setCameraOn(false);
-        toast.success("Photo captured! ✅");
     };
 
     const handleRegister = async () => {
         setLoading(true);
         try {
+            let finalFaceFrame = faceFrame;
+
+            // Auto capture if camera is on and they just clicked "Create Account"
+            if (cameraOn && !faceFrame && videoRef.current && canvasRef.current) {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext("2d");
+                canvas.width = videoRef.current.videoWidth;
+                canvas.height = videoRef.current.videoHeight;
+                ctx?.drawImage(videoRef.current, 0, 0);
+                finalFaceFrame = canvas.toDataURL("image/jpeg", 0.8);
+                stopCamera();
+            }
+
             const res = await authApi.register({
                 ...form,
                 role,
-                face_image_b64: faceB64 || undefined,
+                face_image_b64: finalFaceFrame || undefined,
             });
             login(res.data.access_token, res.data.user);
+
+            // Show any soft warnings returned by the backend
+            if (res.data.warnings && res.data.warnings.length > 0) {
+                res.data.warnings.forEach((w: string) => toast(w, { icon: "⚠️" }));
+            }
+
             toast.success(`Account created! Welcome, ${res.data.user.name} 🎉`);
         } catch (err: any) {
-            toast.error(err.response?.data?.detail || "Registration failed");
+            let detail = err.response?.data?.detail || "Registration failed";
+            if (typeof detail !== "string") detail = JSON.stringify(detail);
+            toast.error(detail);
         } finally {
             setLoading(false);
         }
@@ -101,7 +130,7 @@ export default function RegisterPage() {
 
                             <div className="flex gap-2 p-1 bg-gray-100 rounded-xl mb-5">
                                 {(["buyer", "seller"] as const).map((r) => (
-                                    <button key={r} onClick={() => setRole(r)}
+                                    <button key={r} onClick={() => setRole(r)} suppressHydrationWarning
                                         className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all capitalize ${role === r ? "bg-white shadow text-gray-900" : "text-gray-500"
                                             }`}>
                                         {r === "buyer" ? "🛒 Buyer" : "🏪 Seller"}
@@ -139,10 +168,10 @@ export default function RegisterPage() {
 
                             <div className="relative rounded-2xl overflow-hidden bg-gray-900 aspect-video mb-4">
                                 <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
-                                {faceB64 && (
-                                    <img src={faceB64} alt="captured" className="absolute inset-0 w-full h-full object-cover" />
+                                {faceFrame && (
+                                    <img src={faceFrame} alt="captured" className="absolute inset-0 w-full h-full object-cover" />
                                 )}
-                                {!cameraOn && !faceB64 && (
+                                {!cameraOn && !faceFrame && (
                                     <div className="absolute inset-0 flex items-center justify-center text-white/60 text-sm flex-col gap-2">
                                         <span className="text-4xl">📷</span>
                                         <span>Camera not active</span>
@@ -155,16 +184,18 @@ export default function RegisterPage() {
                             <canvas ref={canvasRef} className="hidden" />
 
                             <div className="flex gap-2 mb-4">
-                                {!cameraOn && !faceB64
+                                {!cameraOn && !faceFrame
                                     ? <button onClick={startCamera} className="btn-secondary flex-1">📷 Open Camera</button>
                                     : cameraOn
-                                        ? <button onClick={capturePhoto} className="btn-primary flex-1">📸 Capture</button>
-                                        : <button onClick={() => { setFaceB64(null); startCamera(); }} className="btn-secondary flex-1">🔄 Retake</button>
+                                        ? <button onClick={capturePhoto} disabled={loading} className="btn-primary flex-1">
+                                            {loading ? "Capturing..." : "📸 Take Photo"}
+                                        </button>
+                                        : <button onClick={() => { setFaceFrame(null); startCamera(); }} className="btn-secondary flex-1">🔄 Retake</button>
                                 }
                             </div>
 
                             <div className="flex gap-2">
-                                <button onClick={() => { setFaceB64(null); handleRegister(); }} className="btn-ghost flex-1 justify-center border border-gray-200 rounded-xl" disabled={loading}>
+                                <button onClick={() => { setFaceFrame(null); handleRegister(); }} className="btn-ghost flex-1 justify-center border border-gray-200 rounded-xl" disabled={loading}>
                                     Skip for now
                                 </button>
                                 <button onClick={handleRegister} disabled={loading} className="btn-primary flex-1">

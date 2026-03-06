@@ -104,3 +104,57 @@ Format:
         else:
             print(f"Error generating search products: {e}")
         return []
+
+async def enhance_product_details(raw_data: dict) -> dict:
+    """Use Gemini to polish messy OpenFoodFacts data into professional product details."""
+    try:
+        # Define available categories for the AI to choose from
+        CATEGORIES = ["Groceries", "Snacks", "Beverages", "Dairies", "Vegetables", "Fruits", "Meat", "Essentials", "Bakery", "Personal Care"]
+        
+        prompt = f"""You are an expert copywriter for a premium grocery delivery app (Smarter BlinkIt).
+I will provide raw metadata for a product from OpenFoodFacts. 
+Your job is to generate a professional, concise, and appealing set of details.
+
+RAW DATA:
+Name: {raw_data.get('name')}
+Brand: {raw_data.get('brand')}
+Raw Category: {raw_data.get('category')}
+Raw Tags: {raw_data.get('tags')}
+
+INSTRUCTIONS:
+1. "name": A clean, recognizable title (remove excessive weights or jargon).
+2. "description": A short (1-2 sentence) professional and appetizing description.
+3. "category": Must be EXACTLY one of these: {CATEGORIES}. Select the best match.
+4. "tags": A list of 4-6 highly relevant, lowercase search keywords.
+
+Return ONLY a valid JSON object.
+
+Example Format:
+{{
+  "name": "Coca-Cola Classic (500ml)",
+  "description": "The world's favorite sparkling beverage, delivering a refreshing and uplifting taste with every sip.",
+  "category": "Beverages",
+  "tags": ["soft drink", "soda", "coke", "carbonated", "chilled"]
+}}"""
+        
+        response = _client.models.generate_content(
+            model=_GENERATION_MODEL,
+            contents=prompt,
+        )
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        
+        enhanced = json.loads(text.strip())
+        return enhanced
+    except Exception as e:
+        print(f"Error enhancing product details with AI: {e}")
+        # Fallback to original data if AI fails
+        return {
+            "name": raw_data.get("name"),
+            "description": raw_data.get("description", "High quality product."),
+            "category": raw_data.get("category", "Groceries"),
+            "tags": raw_data.get("tags", [])
+        }
