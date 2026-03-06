@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
+import traceback
 from pydantic import BaseModel
 from typing import List, Optional, Dict
-from database import get_orders_collection, get_products_collection
+from database import get_orders_collection, get_products_collection, get_users_collection
 from services.dependencies import require_buyer
 from services.neo4j_service import record_order_purchase
 from bson import ObjectId
@@ -35,52 +36,73 @@ def smart_split_cart(items: list) -> Dict[str, list]:
 @router.post("/create")
 async def create_order(req: CreateOrderReq, buyer=Depends(require_buyer)):
     """Create a pending order."""
-    products_col = get_products_collection()
-    orders_col = get_orders_collection()
+    try:
+        products_col = get_products_collection()
+        orders_col = get_orders_collection()
+        users_col = get_users_collection()
 
-    order_items = []
-    total = 0.0
+        # Fetch full buyer details since the stateless dependency only provides ID and Role
+        full_buyer_doc = await users_col.find_one({"_id": buyer["_id"]})
+        buyer_name = full_buyer_doc.get("name", "Unknown Buyer") if full_buyer_doc else "Unknown Buyer"
 
-    for item in req.items:
-        product = await products_col.find_one({"_id": ObjectId(item.product_id)})
-        if not product:
-            raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
-        if product["stock"] < item.quantity:
-            raise HTTPException(status_code=400, detail=f"Insufficient stock for {product['name']}")
+        order_items = []
+        total = 0.0
 
-        line_total = product["price"] * item.quantity
-        total += line_total
-        order_items.append({
-            "product_id": item.product_id,
-            "product_name": product["name"],
-            "quantity": item.quantity,
-            "price": product["price"],
-            "seller_id": str(product["seller_id"]),
-            "seller_name": product.get("seller_name", ""),
-            "line_total": line_total,
-        })
+        print(f"DEBUG: Creating order for buyer {buyer['_id']} ({buyer_name}) with {len(req.items)} items")
+        for item in req.items:
+            try:
+                p_id = ObjectId(item.product_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"Invalid product ID: {item.product_id}")
 
-    shop_groups = smart_split_cart(order_items)
+            product = await products_col.find_one({"_id": p_id})
+            if not product:
+                raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+            if product["stock"] < item.quantity:
+                raise HTTPException(status_code=400, detail=f"Insufficient stock for {product['name']}")
 
-    order_doc = {
-        "items": order_items,
-        "buyer_id": str(buyer["_id"]),
-        "buyer_name": buyer["name"],
-        "total_amount": total,
-        "delivery_address": req.delivery_address,
-        "buyer_location": {"type": "Point", "coordinates": [req.buyer_lng or 0, req.buyer_lat or 0]},
-        "status": "pending",
-        "payment_id": None,
-        "shop_groups": shop_groups,
-    }
+            line_total = product["price"] * item.quantity
+            total += line_total
+            order_items.append({
+                "product_id": item.product_id,
+                "product_name": product["name"],
+                "quantity": item.quantity,
+                "price": product["price"],
+                "seller_id": str(product["seller_id"]),
+                "seller_name": product.get("seller_name", "Unknown Seller"),
+                "line_total": line_total,
+            })
 
-    result = await orders_col.insert_one(order_doc)
-    return {
-        "order_id": str(result.inserted_id),
-        "total_amount": total,
-        "shop_groups": shop_groups,
-        "item_count": len(order_items),
-    }
+        # Group by seller and SANITIZE KEYS (MongoDB keys cannot contain dots)
+        raw_groups = smart_split_cart(order_items)
+        shop_groups = {k.replace(".", "_"): v for k, v in raw_groups.items()}
+
+        order_doc = {
+            "items": order_items,
+            "buyer_id": str(buyer["_id"]),
+            "buyer_name": buyer_name,
+            "total_amount": total,
+            "delivery_address": req.delivery_address,
+            "buyer_location": {"type": "Point", "coordinates": [req.buyer_lng or 0.0, req.buyer_lat or 0.0]},
+            "status": "pending",
+            "payment_id": None,
+            "shop_groups": shop_groups,
+        }
+
+        result = await orders_col.insert_one(order_doc)
+        print(f"DEBUG: Order created successfully: {result.inserted_id}")
+        return {
+            "order_id": str(result.inserted_id),
+            "total_amount": total,
+            "shop_groups": shop_groups,
+            "item_count": len(order_items),
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        print("❌ ERROR in create_order:")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal Server Error in create_order")
 
 @router.post("/pay")
 async def demo_pay(req: DemoPaymentReq, buyer=Depends(require_buyer)):
@@ -91,12 +113,16 @@ async def demo_pay(req: DemoPaymentReq, buyer=Depends(require_buyer)):
     orders_col = get_orders_collection()
     products_col = get_products_collection()
 
+    print(f"DEBUG: Processing payment for order {req.order_id}")
     order = await orders_col.find_one({"_id": ObjectId(req.order_id)})
     if not order:
+        print(f"DEBUG: Order {req.order_id} not found")
         raise HTTPException(status_code=404, detail="Order not found")
     if order["buyer_id"] != str(buyer["_id"]):
+        print(f"DEBUG: Order {req.order_id} buyer mismatch")
         raise HTTPException(status_code=403, detail="Access denied")
     if order["status"] == "paid":
+        print(f"DEBUG: Order {req.order_id} already paid")
         raise HTTPException(status_code=400, detail="Order already paid")
 
     # Generate fake transaction ID

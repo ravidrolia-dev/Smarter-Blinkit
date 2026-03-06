@@ -110,12 +110,14 @@ async def generate_barcode(seller=Depends(require_seller)):
         
         return {
             "barcode": upc_code.get_fullcode(), # Returns full 12 digit string
-            "image": data_uri
+            "image_b64": data_uri
         }
         
     except Exception as e:
-        print(f"Barcode generation error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate barcode.")
+        import traceback
+        tb = traceback.format_exc()
+        print(f"Barcode generation error: {e}\n{tb}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate barcode: {str(e)}")
 
 @router.get("/barcode/{barcode}")
 async def lookup_by_barcode(barcode: str, user=Depends(get_current_user)):
