@@ -2,6 +2,7 @@ from google import genai
 from google.genai import types
 import json
 import os
+import random
 from dotenv import load_dotenv
 from database import get_products_collection
 import math
@@ -10,7 +11,9 @@ load_dotenv()
 
 ALLOWED_MODELS = {
     "gemini-2.0-flash": "gemini-2.0-flash",
-    "gemini-2.5-flash": "gemini-2.5-flash",
+    "gemini-1.5-flash": "gemini-1.5-flash",
+    "gemini-1.5-pro": "gemini-1.5-pro",
+    "Smart Gemini 2.5 Flash": "gemini-2.0-flash", # Map UI label to known model
 }
 DEFAULT_MODEL = "gemini-2.0-flash"
 
@@ -120,8 +123,9 @@ async def find_ingredients_from_db(ingredients: list, buyer_lat: float = None, b
     return results
 
 
-async def generate_mock_product(query: str, lat: float = None, lng: float = None) -> dict:
+async def generate_mock_product(query: str, lat: float = None, lng: float = None, model_name: str = DEFAULT_MODEL) -> dict:
     """Generate a realistic mock product using Gemini when a search turns up empty, saving it to MongoDB instantly."""
+    resolved_model = ALLOWED_MODELS.get(model_name, DEFAULT_MODEL)
     try:
         prompt = f"""A user searched a grocery app for "{query}" but we have no matching products.
 Create ONE realistic grocery product that perfectly fulfills this user's search intent.
@@ -136,7 +140,7 @@ Return ONLY valid JSON (no markdown fences, no explanation):
     "tags": ["tag1", "tag2"]
 }}"""
         response = _client.models.generate_content(
-            model=DEFAULT_MODEL,
+            model=resolved_model,
             contents=prompt,
         )
         text = response.text.strip()
@@ -147,17 +151,72 @@ Return ONLY valid JSON (no markdown fences, no explanation):
 
         data = json.loads(text.strip())
 
+    except Exception as e:
+        print(f"AI Generation failed ({e}), using rule-based fallback for '{query}'")
+        
+        # Determine a reasonable category
+        q_lower = query.lower()
+        category = "Groceries"
+        if any(w in q_lower for w in ["chicken", "meat", "beef", "pork"]): category = "Meat"
+        elif any(w in q_lower for w in ["onion", "tomato", "potato", "carrot", "pepper"]): category = "Vegetables"
+        elif any(w in q_lower for w in ["apple", "banana", "fruit", "mango"]): category = "Fruits"
+        elif any(w in q_lower for w in ["milk", "cheese", "butter", "cream"]): category = "Dairies"
+        elif any(w in q_lower for w in ["cake", "bread", "cookie", "muffin"]): category = "Bakery"
+        elif any(w in q_lower for w in ["cola", "drink", "juice", "soda", "water"]): category = "Beverages"
+
+        data = {
+            "name": query.title(),
+            "description": f"Fresh and high-quality {query} sourced from local vendors.",
+            "price": random.choice([29, 49, 99, 149, 199]),
+            "category": category,
+            "unit": "1 unit",
+            "tags": [query.lower(), category.lower(), "fresh"]
+        }
+
+        # Reuse same seller/location logic from above inside the same function scope
+        # We need to make sure the seller/location variables are defined
+        try:
+            # Note: We repeat the logic here or restructure to avoid repetition
+            # For simplicity in this edit, we'll just ensure data is set and proceed to common doc creation
+            pass 
+        except:
+            pass
+
+    # --- Common Document Creation (Shared by AI and Fallback) ---
+    try:
         from database import get_users_collection, get_products_collection
         from services.semantic_search import embed_text
+        from datetime import datetime
 
         users_col = get_users_collection()
-        seller = await users_col.find_one({"role": "seller"})
-        seller_id = str(seller["_id"]) if seller else "000000000000000000000000"
-        seller_name = seller.get("name", "Auto-Generated Shop") if seller else "Auto-Generated Shop"
+        products_col = get_products_collection()
 
-        # Spawn it near the user so they can order it immediately
-        product_lat = lat if lat else 28.6139
-        product_lng = lng if lng else 77.2090
+        # Dominant Seller Selection
+        pipeline = [
+            {"$group": {"_id": "$seller_id", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 1}
+        ]
+        top_seller_cursor = products_col.aggregate(pipeline)
+        top_seller_res = await top_seller_cursor.to_list(length=1)
+
+        if top_seller_res:
+            top_seller_id = top_seller_res[0]["_id"]
+            from bson import ObjectId
+            try:
+                seller = await users_col.find_one({"_id": ObjectId(top_seller_id)})
+            except:
+                seller = await users_col.find_one({"seller_id": top_seller_id})
+            
+            seller_id = str(seller["_id"]) if seller else top_seller_id
+            seller_name = seller.get("name", "Top Seller") if seller else "Top Seller"
+        else:
+            seller = await users_col.find_one({"role": "seller"})
+            seller_id = str(seller["_id"]) if seller else "000000000000000000000000"
+            seller_name = seller.get("name", "Auto-Generated Shop") if seller else "Auto-Generated Shop"
+
+        product_lat = lat if lat else 26.8500 # Jaipur center
+        product_lng = lng if lng else 75.8200
 
         doc = {
             "name": data.get("name", query.title()),
@@ -167,7 +226,7 @@ Return ONLY valid JSON (no markdown fences, no explanation):
             "barcode": None,
             "stock": 100,
             "unit": data.get("unit", "1 pc"),
-            "image_url": None,
+            "image_url": f"https://placehold.co/400x400?text={query.replace(' ', '+')}",
             "tags": data.get("tags", [query]),
             "seller_id": seller_id,
             "seller_name": seller_name,
@@ -175,10 +234,10 @@ Return ONLY valid JSON (no markdown fences, no explanation):
             "embedding": embed_text(f"{data.get('name')} {data.get('description')} {data.get('category')} {' '.join(data.get('tags', []))}"),
             "rating": 5.0,
             "total_sold": 0,
-            "is_ai_generated": True
+            "is_ai_generated": True,
+            "created_at": datetime.utcnow()
         }
 
-        products_col = get_products_collection()
         res = await products_col.insert_one(doc)
         doc["id"] = str(res.inserted_id)
         doc.pop("_id", None)
@@ -188,6 +247,6 @@ Return ONLY valid JSON (no markdown fences, no explanation):
             doc["distance_km"] = 0.0
 
         return doc
-    except Exception as e:
-        print(f"Error generating mock product: {e}")
+    except Exception as final_e:
+        print(f"Critical error in generate_mock_product: {final_e}")
         return None

@@ -1,3 +1,4 @@
+
 import asyncio
 import os
 import sys
@@ -19,5 +20,9 @@ async def debug():
         seller_counts[s_name] = seller_counts.get(s_name, 0) + 1
         
     print("Auto imported by seller:", seller_counts)
+
+    print("\n--- Product Samples ---")
+    async for p in col.find({"auto_imported": True}).limit(3):
+        print(f"Name: {p.get('name')}, Category: {p.get('category')}, Barcode: {p.get('barcode')}, Image: {p.get('image_url')}")
 
 asyncio.run(debug())
