@@ -1,3 +1,4 @@
+
 import axios from "axios";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -5,7 +6,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export const api = axios.create({
     baseURL: API_BASE,
     headers: { "Content-Type": "application/json" },
-    timeout: 15000, // Explicit 15s timeout to catch hung backend requests smoothly
+    timeout: 60000, // Increased to 60s for heavy AI fallback chains
 });
 
 // Attach JWT token to every request
@@ -36,6 +37,7 @@ export const authApi = {
     login: (email: string, password: string) => api.post("/auth/login", { email, password }),
     faceLogin: (image_b64: string) => api.post("/auth/face-login", { image_b64 }),
     enrollFace: (user_id: string, image_b64: string) => api.post("/auth/enroll-face", { user_id, image_b64 }),
+    listSellers: (params?: any) => api.get("/auth/sellers", { params }),
 };
 
 // ===== Products =====
@@ -75,8 +77,8 @@ export const inventoryApi = {
 
 // ===== Agent =====
 export const agentApi = {
-    recipe: (meal: string, lat?: number, lng?: number, model?: string) =>
-        api.get("/agent/recipe", { params: { meal, lat, lng, model } }),
+    recipe: (meal: string, lat?: number, lng?: number) =>
+        api.get("/agent/recipe", { params: { meal, lat, lng } }),
 };
 
 // ===== Analytics =====
@@ -84,6 +86,6 @@ export const analyticsApi = {
     topProducts: () => api.get("/analytics/top-products"),
     topShops: () => api.get("/analytics/top-shops"),
     categoryBreakdown: () => api.get("/analytics/category-breakdown"),
-    recentOrders: () => api.get("/analytics/recent-orders"),
+    recentOrders: (params?: any) => api.get("/analytics/recent-orders", { params }),
     moneyMap: () => api.get("/analytics/money-map"),
 };

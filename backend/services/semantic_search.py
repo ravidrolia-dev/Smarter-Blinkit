@@ -104,8 +104,12 @@ def rank_products_by_query(
         return _keyword_fallback(query, products)
 
     # 1. Encode + normalize query
-    model = get_model()
-    query_vec = model.encode(query, normalize_embeddings=True, convert_to_numpy=True)
+    try:
+        model = get_model()
+        query_vec = model.encode(query, normalize_embeddings=True, convert_to_numpy=True)
+    except Exception as e:
+        print(f"Embedding error: {e}")
+        return _keyword_fallback(query, products)
 
     query_lower = query.lower()
     scored = []

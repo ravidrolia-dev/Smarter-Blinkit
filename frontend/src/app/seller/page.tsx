@@ -3,22 +3,49 @@ import { useEffect, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { inventoryApi, analyticsApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from "recharts";
 import Link from "next/link";
+import { useCallback } from "react";
+
+const COLORS = ["#FFD000", "#FFC107", "#FFAB00", "#FF8F00", "#FF6F00", "#E65100", "#BF360C"];
 
 export default function SellerDashboard() {
     const { user } = useAuth();
     const [products, setProducts] = useState<any[]>([]);
     const [topProducts, setTopProducts] = useState<any[]>([]);
+    const [topShops, setTopShops] = useState<any[]>([]);
+    const [categories, setCategories] = useState<any[]>([]);
+    const [recentOrders, setRecentOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [lastUpdate, setLastUpdate] = useState(new Date());
+
+    const fetchAll = useCallback(async () => {
+        try {
+            const [p, tp, ts, cat, ro] = await Promise.all([
+                inventoryApi.myProducts(),
+                analyticsApi.topProducts(),
+                analyticsApi.topShops(),
+                analyticsApi.categoryBreakdown(),
+                analyticsApi.recentOrders({ seller_id: user?.id }),
+            ]);
+            setProducts(p.data);
+            setTopProducts(tp.data.slice(0, 8));
+            setTopShops(ts.data.slice(0, 5));
+            setCategories(cat.data.slice(0, 7));
+            setRecentOrders(ro.data.slice(0, 5));
+            setLastUpdate(new Date());
+        } catch (err) {
+            console.error("Dashboard refresh failed:", err);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
     useEffect(() => {
-        Promise.all([inventoryApi.myProducts(), analyticsApi.topProducts()])
-            .then(([p, t]) => {
-                setProducts(p.data);
-                setTopProducts(t.data.slice(0, 5));
-            }).finally(() => setLoading(false));
-    }, []);
+        fetchAll();
+        const interval = setInterval(fetchAll, 15000); // Live sync
+        return () => clearInterval(interval);
+    }, [fetchAll]);
 
     const totalStock = products.reduce((s, p) => s + (p.stock || 0), 0);
     const totalSold = products.reduce((s, p) => s + (p.total_sold || 0), 0);
@@ -68,19 +95,67 @@ export default function SellerDashboard() {
                 </div>
             )}
 
-            {/* Sales Chart */}
-            {topProducts.length > 0 && (
-                <div className="card mb-6">
-                    <h2 className="section-title mb-4">🔥 Top Selling Products</h2>
-                    <ResponsiveContainer width="100%" height={200}>
-                        <BarChart data={topProducts}>
-                            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+            {/* Analytics Charts */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                {/* Top Products */}
+                <div className="card">
+                    <h2 className="section-title">🔥 Top Products by Sales</h2>
+                    <p className="text-[10px] text-gray-400 mb-4">Units sold across the marketplace</p>
+                    <ResponsiveContainer width="100%" height={240}>
+                        <BarChart data={topProducts} layout="vertical">
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                            <XAxis type="number" tick={{ fontSize: 11 }} />
+                            <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11 }} />
                             <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }} />
-                            <Bar dataKey="total_sold" fill="#FFD000" radius={[6, 6, 0, 0]} name="Units Sold" />
+                            <Bar dataKey="total_sold" fill="#FFD000" radius={[0, 6, 6, 0]} name="Units Sold" />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
-            )}
+
+                {/* Sales by Category */}
+                <div className="card">
+                    <h2 className="section-title">🏷️ Sales by Category</h2>
+                    <p className="text-[10px] text-gray-400 mb-4">Market contribution by type</p>
+                    {categories.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={240}>
+                            <PieChart>
+                                <Pie data={categories} dataKey="total_sold" nameKey="_id" cx="50%" cy="50%"
+                                    outerRadius={80} label={({ name, percent }: { name?: string; percent?: number }) => `${name || ''} ${((percent || 0) * 100).toFixed(0)}%`}
+                                    labelLine={false}>
+                                    {categories.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                </Pie>
+                                <Tooltip />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="text-center py-12 text-gray-400">No category data yet</div>
+                    )}
+                </div>
+            </div>
+
+            {/* Shop Leaderboard */}
+            <div className="card mb-6">
+                <h2 className="section-title mb-4">🏆 Top Shops Leaderboard</h2>
+                <div className="space-y-4">
+                    {topShops.length > 0 ? topShops.map((shop, i) => (
+                        <div key={shop._id} className="flex items-center gap-4">
+                            <span className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs flex-shrink-0 ${i === 0 ? "bg-yellow-400" : i === 1 ? "bg-gray-200" : i === 2 ? "bg-orange-200" : "bg-gray-100"
+                                }`}>{i + 1}</span>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-bold text-sm truncate">{shop.seller_name || "Shop"}</p>
+                                <div className="h-1.5 bg-gray-100 rounded-full mt-1">
+                                    <div className="h-1.5 bg-yellow-400 rounded-full transition-all"
+                                        style={{ width: `${Math.min(100, (shop.total_sales / (topShops[0]?.total_sales || 1)) * 100)}%` }} />
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <p className="font-black text-gray-900 text-sm">{shop.total_sales} sold</p>
+                                <p className="text-[10px] text-gray-400">₹{shop.total_revenue?.toFixed(0)}</p>
+                            </div>
+                        </div>
+                    )) : <p className="text-center text-gray-400 py-4">Waiting for marketplace activity...</p>}
+                </div>
+            </div>
 
             {/* Quick Actions */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

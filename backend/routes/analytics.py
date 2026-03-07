@@ -51,13 +51,24 @@ async def category_breakdown():
     return await products_col.aggregate(pipeline).to_list(length=50)
 
 @router.get("/recent-orders")
-async def recent_orders(limit: int = 20):
-    """Recent paid orders for live storeboard."""
+async def recent_orders(seller_id: str = None, limit: int = 20):
+    """Recent paid orders. If seller_id is provided, only shows orders containing their items."""
     orders_col = get_orders_collection()
-    cursor = orders_col.find({"status": "paid"}).sort("_id", -1).limit(limit)
+    query = {"status": "paid"}
+    if seller_id:
+        query["items.seller_id"] = seller_id
+
+    cursor = orders_col.find(query).sort("_id", -1).limit(limit)
     orders = await cursor.to_list(length=limit)
+    
     for o in orders:
         o["id"] = str(o.pop("_id"))
+        if seller_id:
+            # Only show items belonging to THIS seller
+            o["items"] = [item for item in o["items"] if item.get("seller_id") == seller_id]
+            # Recalculate total for THIS seller's view
+            o["total_amount"] = sum(item.get("line_total", 0) for item in o["items"])
+            
     return orders
 
 @router.get("/money-map")

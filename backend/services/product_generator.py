@@ -1,17 +1,15 @@
-from google import genai
+from services.ai.gemini_service import gemini_service
 import json
 import os
 import random
+import logging
 from datetime import datetime
 from dotenv import load_dotenv
 from database import get_users_collection, get_products_collection
 from services.semantic_search import embed_text
 
 load_dotenv()
-
-# Single shared client
-_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
-_GENERATION_MODEL = "gemini-2.0-flash"  # Fast model for bulk product generation
+logger = logging.getLogger("product_generator")
 
 async def generate_search_products(query: str, lat: float = None, lng: float = None) -> list:
     """Generate up to 5 realistic mock products using Gemini when a search turns up empty or low score. Save to MongoDB permanently."""
@@ -19,7 +17,7 @@ async def generate_search_products(query: str, lat: float = None, lng: float = N
         prompt = f"""A user searched a grocery delivery app for "{query}" but we didn't have strong matches.
 Create EXACTLY 5 highly relevant, realistic grocery products to fulfill this search intent.
 Ensure diverse options (e.g., different brands, organic vs regular, different sizes).
-Return ONLY a valid JSON array of objects (no markdown fences, no explanation).
+Return ONLY a valid JSON array of objects.
 Format:
 [
   {{
@@ -31,17 +29,17 @@ Format:
     "tags": ["tag1", "tag2"]
   }}
 ]"""
-        response = _client.models.generate_content(
-            model=_GENERATION_MODEL,
-            contents=prompt,
-        )
-        text = response.text.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
+        text = await gemini_service.generate_content(prompt)
+        if not text:
+            return []
+        
+        # Robust JSON extraction
+        clean_json = gemini_service.extract_json(text)
+        if not clean_json:
+            logger.error(f"Failed to extract JSON from Search AI: {text[:100]}...")
+            return []
 
-        data_list = json.loads(text.strip())
+        data_list = json.loads(clean_json)
 
         users_col = get_users_collection()
         seller = await users_col.find_one({"role": "seller"})
@@ -137,11 +135,11 @@ Example Format:
   "tags": ["soft drink", "soda", "coke", "carbonated", "chilled"]
 }}"""
         
-        response = _client.models.generate_content(
-            model=_GENERATION_MODEL,
-            contents=prompt,
-        )
-        text = response.text.strip()
+        text = await gemini_service.generate_content(prompt)
+        if not text:
+            raise Exception("AI generation failed or quota exceeded.")
+        
+        text = text.strip()
         if text.startswith("```"):
             text = text.split("```")[1]
             if text.startswith("json"):

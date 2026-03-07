@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { productsApi, analyticsApi } from "@/lib/api";
+import { productsApi, analyticsApi, authApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import Link from "next/link";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
@@ -11,28 +11,61 @@ export default function BuyerDashboard() {
     const [topProducts, setTopProducts] = useState<any[]>([]);
     const [featured, setFeatured] = useState<any[]>([]);
     const [categories, setCategories] = useState<any[]>([]);
+    const [sellers, setSellers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [coords, setCoords] = useState<{ lat: number, lng: number } | null>(null);
 
     const hour = new Date().getHours();
     const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
     useEffect(() => {
-        Promise.all([
-            productsApi.list({ limit: 8 }),
-            analyticsApi.topProducts(),
-            analyticsApi.categoryBreakdown(),
-        ]).then(([p, t, c]) => {
-            setFeatured(p.data.slice(0, 8));
-            setTopProducts(t.data.slice(0, 6));
-            setCategories(c.data.slice(0, 6));
-        }).catch(() => { }).finally(() => setLoading(false));
+        setLoading(true);
+        // Fetch products (Primary)
+        productsApi.list({ limit: 8 })
+            .then((res) => setFeatured(res.data.slice(0, 8)))
+            .catch((err) => console.error("Featured products fail:", err))
+            .finally(() => setLoading(false));
+
+        // Detect Location and Fetch Sellers
+        if ("geolocation" in navigator) {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    const lat = pos.coords.latitude;
+                    const lng = pos.coords.longitude;
+                    setCoords({ lat, lng });
+
+                    // Fetch sellers only after we have location
+                    authApi.listSellers({ lat, lng, radius_km: 15 })
+                        .then((res) => setSellers(res.data))
+                        .catch((err) => console.error("Sellers fail:", err));
+                },
+                (err) => {
+                    console.error("Location denied or failed:", err);
+                },
+                { enableHighAccuracy: true }
+            );
+        }
+
+        // Fetch top products for chart
+        analyticsApi.topProducts()
+            .then((res) => setTopProducts(res.data.slice(0, 6)))
+            .catch((err) => console.error("Top products fail:", err));
+
+        // Fetch categories
+        analyticsApi.categoryBreakdown()
+            .then((res) => setCategories(res.data.slice(0, 6)))
+            .catch((err) => console.error("Categories fail:", err));
     }, []);
 
     const quickCategories = [
-        { icon: "🍎", name: "Fruits" }, { icon: "🥛", name: "Dairy" },
-        { icon: "🍞", name: "Bakery" }, { icon: "🥩", name: "Meat" },
-        { icon: "🍜", name: "Snacks" }, { icon: "🧴", name: "Personal Care" },
-        { icon: "🥗", name: "Vegetables" }, { icon: "🧃", name: "Beverages" },
+        { icon: "📱", name: "Smartphones" },
+        { icon: "🍰", name: "Bakery & Cakes" },
+        { icon: "🍿", name: "Snacks" },
+        { icon: "💊", name: "Health & Wellness" },
+        { icon: "👗", name: "Womens-Dresses" },
+        { icon: "💄", name: "Beauty" },
+        { icon: "🥦", name: "Fruits & Vegetables" },
+        { icon: "🥛", name: "Dairy" },
     ];
 
     return (
@@ -86,6 +119,28 @@ export default function BuyerDashboard() {
                     </div>
                 )}
             </div>
+
+            {/* Shop by Seller */}
+            {sellers.length > 0 && (
+                <div className="mb-6">
+                    <h2 className="section-title">Shop by Seller</h2>
+                    <p className="section-sub">Trusted local shops from your area</p>
+                    <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar stagger">
+                        {sellers.map((s) => (
+                            <Link key={s.id} href={`/buyer/shop/${s.id}`}
+                                className="card flex-shrink-0 w-48 py-4 flex flex-col items-center gap-2 hover:border-yellow-400 border-2 border-transparent transition-all">
+                                <div className="w-16 h-16 rounded-full bg-yellow-100 flex items-center justify-center text-3xl">
+                                    🏪
+                                </div>
+                                <div className="text-center">
+                                    <p className="font-bold text-gray-900 truncate w-40">{s.name}</p>
+                                    <p className="text-[10px] text-gray-400 truncate w-40">{s.address || "Jaipur, Rajasthan"}</p>
+                                </div>
+                            </Link>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Trending Chart */}
             {topProducts.length > 0 && (
@@ -171,8 +226,25 @@ function ProductCard({ product }: { product: any }) {
 
 function getCategoryEmoji(cat: string) {
     const map: any = {
-        fruits: "🍎", dairy: "🥛", bakery: "🍞", meat: "🥩", snacks: "🍜",
-        vegetables: "🥗", beverages: "🧃", spices: "🌶️", default: "🛒"
+        fruits: "🍎",
+        dairy: "🥛",
+        bakery: "🍞",
+        meat: "🥩",
+        snacks: "🍿",
+        vegetables: "🥦",
+        beverages: "🧃",
+        spices: "🌶️",
+        smartphones: "📱",
+        laptops: "💻",
+        beauty: "💄",
+        "health & wellness": "💊",
+        "bakery & cakes": "🍰",
+        "womens-dresses": "👗",
+        "womens-bags": "👜",
+        "womens-shoes": "👠",
+        household: "🧹",
+        "personal care": "🧴",
+        default: "🛒"
     };
     return map[cat?.toLowerCase()] || map.default;
 }

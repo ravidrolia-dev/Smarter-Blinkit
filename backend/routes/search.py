@@ -36,8 +36,8 @@ async def _fetch_and_rank(q: str, lat: Optional[float], lng: Optional[float], li
 
     results = []
     for p in ranked[:limit]:
+        p["id"] = str(p.pop("_id", p.get("id")))
         p.pop("embedding", None)
-        p.pop("_id", None)
         results.append(p)
 
     return results

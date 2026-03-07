@@ -20,31 +20,10 @@ export default function RecipeAgentPage() {
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<any | null>(null);
     const [added, setAdded] = useState<string[]>([]);
-    const [selectedModel, setSelectedModel] = useState("gemini-2.0-flash");
     const { status, location } = useLocation();
 
-    const MODELS = [
-        {
-            id: "gemini-2.0-flash",
-            label: "Gemini 2.0 Flash",
-            badge: "⚡ Fast",
-            badgeColor: "#065f46",
-            badgeBg: "#d1fae5",
-            desc: "Faster · Lightweight · Great for simple recipes & quick answers"
-        },
-        {
-            id: "gemini-2.5-flash",
-            label: "Gemini 2.5 Flash",
-            badge: "🧠 Smart",
-            badgeColor: "#1e40af",
-            badgeBg: "#dbeafe",
-            desc: "Advanced reasoning · Detailed & accurate recipes · Slightly slower"
-        },
-    ];
-
     const examples = [
-        "Make Pizza for 4 people", "Pasta dinner for 2",
-        "Chicken curry for family", "Pancakes for breakfast", "Biryani for 6",
+        "Make Pizza", "Pasta dinner", "Chicken curry", "Pancakes", "Paneer Butter Masala",
     ];
 
     const handleSearch = async () => {
@@ -52,10 +31,14 @@ export default function RecipeAgentPage() {
         setLoading(true);
         setResult(null);
         try {
-            const res = await agentApi.recipe(meal, location?.lat, location?.lng, selectedModel);
+            const res = await agentApi.recipe(meal, location?.lat, location?.lng);
             setResult(res.data);
-        } catch {
-            toast.error("Agent failed. Check your Gemini API key.");
+            if (res.data.warning) {
+                toast(res.data.warning, { icon: "⚠️", duration: 6000 });
+            }
+        } catch (err: any) {
+            const msg = err.response?.data?.detail || "AI service temporarily unavailable due to quota limits.";
+            toast.error(msg, { duration: 5000 });
         } finally {
             setLoading(false);
         }
@@ -80,34 +63,22 @@ export default function RecipeAgentPage() {
 
     return (
         <DashboardLayout role="buyer">
-            <h1 className="text-2xl font-black mb-1">🤖 Recipe Agent</h1>
+            <h1 className="text-2xl font-black mb-1">🤖 Recipe Agent (V4)</h1>
             <p className="text-sm text-gray-500 mb-4">
                 Describe a meal — the AI will find all ingredients from nearby shops and fill your cart.
             </p>
 
-
-
-            {/* Model Selector Dropdown */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-                <label style={{ fontSize: 13, fontWeight: 600, color: "#6b7280", whiteSpace: "nowrap" }}>
-                    🤖 AI Model:
-                </label>
-                <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    style={{
-                        padding: "8px 14px", borderRadius: 10, fontSize: 14, fontWeight: 600,
-                        border: "1.5px solid #e5e7eb", background: "#fff", cursor: "pointer",
-                        color: "#1a1a1a", outline: "none", flexShrink: 0,
-                    }}>
-                    {MODELS.map((m) => (
-                        <option key={m.id} value={m.id}>{m.badge} {m.label}</option>
-                    ))}
-                </select>
-                <span style={{ fontSize: 12, color: "#9ca3af" }}>
-                    {MODELS.find((m) => m.id === selectedModel)?.desc}
-                </span>
-            </div>
+            {/* Warning Banner */}
+            {result?.warning && (
+                <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4 rounded-r-xl">
+                    <div className="flex items-center">
+                        <span className="text-yellow-400 mr-3 text-xl">⚠️</span>
+                        <p className="text-sm text-yellow-700 font-semibold">
+                            {result.warning}
+                        </p>
+                    </div>
+                </div>
+            )}
 
             <div className="card mb-6">
                 <div className="flex gap-3">
@@ -192,6 +163,12 @@ export default function RecipeAgentPage() {
                             </div>
                         ))}
                     </div>
+
+                    {result.found?.length === 0 && result.not_found?.length === 0 && (
+                        <div className="card text-center py-8 border-dashed border-2 border-gray-200">
+                            <p className="text-gray-500 font-medium">No ingredients could be parsed. Try rephrasing your request.</p>
+                        </div>
+                    )}
 
                     {result.not_found?.length > 0 && (
                         <div className="card-flat border border-red-100">

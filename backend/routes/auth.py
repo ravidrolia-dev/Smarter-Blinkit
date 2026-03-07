@@ -31,8 +31,27 @@ def format_user(user):
         "name": user["name"],
         "role": user["role"],
         "phone": user.get("phone"),
-        "created_at": user.get("created_at")
+        "created_at": user.get("created_at"),
+        "address": user.get("address")
     }
+
+@router.get("/sellers")
+async def list_sellers(lat: Optional[float] = None, lng: Optional[float] = None, radius_km: float = 15.0):
+    """List all users who are registered as sellers, optionally filtered by proximity."""
+    users_col = get_users_collection()
+    query = {"role": "seller"}
+    
+    if lat is not None and lng is not None:
+        query["location"] = {
+            "$nearSphere": {
+                "$geometry": {"type": "Point", "coordinates": [lng, lat]},
+                "$maxDistance": radius_km * 1000 # convert to meters
+            }
+        }
+    
+    cursor = users_col.find(query, {"hashed_password": 0, "face_encoding": 0})
+    sellers = await cursor.to_list(length=100)
+    return [format_user(s) for s in sellers]
 
 @router.post("/register", status_code=201)
 async def register(req: RegisterRequest):

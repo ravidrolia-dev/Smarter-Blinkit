@@ -108,6 +108,7 @@ async def create_product(req: ProductCreate, seller=Depends(require_seller)):
 @router.get("")
 async def list_products(
     category: Optional[str] = None,
+    seller_id: Optional[str] = None,
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     limit: int = 30
@@ -116,6 +117,8 @@ async def list_products(
     query = {}
     if category:
         query["category"] = {"$regex": category, "$options": "i"}
+    if seller_id:
+        query["seller_id"] = seller_id
 
     cursor = products_col.find(query).limit(limit)
     products = await cursor.to_list(length=limit)

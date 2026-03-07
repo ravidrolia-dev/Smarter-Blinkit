@@ -1,25 +1,18 @@
-from google import genai
-from google.genai import types
 import json
 import os
 import random
+import math
+import logging
+import re
 from dotenv import load_dotenv
 from database import get_products_collection
-import math
+from services.ai.gemini_service import gemini_service
+from services.ai.rate_limit_manager import manager
 
 load_dotenv()
 
-ALLOWED_MODELS = {
-    "gemini-2.0-flash": "gemini-2.0-flash",
-    "gemini-1.5-flash": "gemini-1.5-flash",
-    "gemini-1.5-pro": "gemini-1.5-pro",
-    "Smart Gemini 2.5 Flash": "gemini-2.0-flash", # Map UI label to known model
-}
-DEFAULT_MODEL = "gemini-2.0-flash"
-
-# Single shared client — initialized once at module load
-_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
-
+# Logger
+logger = logging.getLogger("recipe_agent")
 
 def haversine_km(lat1, lon1, lat2, lon2):
     R = 6371
@@ -30,57 +23,70 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-async def parse_recipe_ingredients(meal_request: str, model_name: str = DEFAULT_MODEL) -> list:
-    """Use Gemini to extract ingredients + quantities from a meal description."""
-    resolved_model = ALLOWED_MODELS.get(model_name, DEFAULT_MODEL)
+async def parse_recipe_ingredients(meal_request: str, model_name: str = None) -> dict:
+    """
+    Use upgraded GeminiService to extract ingredients.
+    V4 UPDATE: Batch Parsing - Can handle multiple requests or heavy single request.
+    Returns a dict with 'ingredients' and 'status'.
+    """
+    system_instruction = (
+        "You are a smart grocery assistant. Extract ingredients and approximate quantities needed. "
+        "Return ONLY a JSON object with two keys: "
+        "'ingredients': list of {ingredient, quantity} objects (max 20), "
+        "'warning': null or a string if you had to truncate. "
+        "CRITICAL: Keep ingredient names clean (no parentheses, no notes like 'optional'). "
+        "Example: {'ingredients': [{'ingredient': 'Mozzarella', 'quantity': '200g'}], 'warning': null}"
+    )
+    
+    prompt = f"User wants to cook: '{meal_request}'. Return realistic ingredients needed to buy."
+
     try:
-        prompt = f"""You are a smart grocery assistant. A user wants to cook: "{meal_request}"
+        response_text = await gemini_service.generate_content(prompt, system_instruction=system_instruction)
+        if not response_text:
+            return {"ingredients": [], "warning": "AI service temporarily unavailable due to quota limits.", "status": "failed"}
 
-Extract the ingredients and approximate quantities needed.
-Return ONLY valid JSON in this format (no markdown, no explanation):
-[
-  {{"ingredient": "flour", "quantity": "500g"}},
-  {{"ingredient": "cheese", "quantity": "200g"}},
-  {{"ingredient": "tomato sauce", "quantity": "250ml"}}
-]
-
-Consider realistic serving sizes. Return 3-8 ingredients maximum."""
-
-        response = _client.models.generate_content(
-            model=resolved_model,
-            contents=prompt,
-        )
-        text = response.text.strip()
-        # Clean up any markdown fences
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        return json.loads(text.strip())
+        # Robust JSON extraction
+        clean_json = gemini_service.extract_json(response_text)
+        if not clean_json:
+            logger.error(f"Failed to extract JSON from AI response: {response_text[:100]}...")
+            return {"ingredients": [], "warning": "AI returned unusable data format.", "status": "error"}
+        
+        data = json.loads(clean_json)
+        return {
+            "ingredients": data.get("ingredients", []),
+            "warning": data.get("warning"),
+            "status": "success"
+        }
     except Exception as e:
-        print(f"Gemini error [{resolved_model}]: {e}")
-        from fastapi import HTTPException
-        if '429' in str(e) or 'quota' in str(e).lower() or 'RESOURCE_EXHAUSTED' in str(e):
-            raise HTTPException(status_code=429, detail=f"AI Quota Exceeded for {resolved_model}. Try switching to a different model or wait a moment.")
-        # Only fallback for standard parsing errors, not quota blocks
-        return [{"ingredient": meal_request, "quantity": "1 unit"}]
+        logger.error(f"Recipe parsing failed: {e}")
+        return {"ingredients": [], "warning": "Failed to parse recipe details.", "status": "error"}
 
 
-async def find_ingredients_from_db(ingredients: list, buyer_lat: float = None, buyer_lng: float = None) -> list:
-    """Search DB for each ingredient, find nearest seller."""
+async def find_ingredients_from_db(ingredients: list, buyer_lat: float = None, buyer_lng: float = None) -> dict:
+    """
+    Search DB for ingredients. 
+    V4 UPDATE: Proactive Quota Check and Partial Result Safety.
+    Returns {results: [...], meta: {partial: bool, message: str}}
+    """
     products_col = get_products_collection()
     results = []
+    is_partial = False
+    message = ""
 
-    for item in ingredients:
+    for i, item in enumerate(ingredients):
         ingredient_name = item.get("ingredient", "")
         quantity = item.get("quantity", "1 unit")
+        
+        # Sanitize for regex
+        safe_name = re.escape(ingredient_name)
 
-        # Search by name similarity
+        # 1. Search DB first (Always safe)
         cursor = products_col.find({
             "$or": [
-                {"name": {"$regex": ingredient_name, "$options": "i"}},
-                {"tags": {"$regex": ingredient_name, "$options": "i"}},
-                {"category": {"$regex": ingredient_name, "$options": "i"}}
+                {"name": {"$regex": f"^{safe_name}$", "$options": "i"}}, # Exact first
+                {"name": {"$regex": safe_name, "$options": "i"}},
+                {"tags": {"$regex": safe_name, "$options": "i"}},
+                {"category": {"$regex": safe_name, "$options": "i"}}
             ],
             "stock": {"$gt": 0}
         }).limit(3)
@@ -101,10 +107,30 @@ async def find_ingredients_from_db(ingredients: list, buyer_lat: float = None, b
                 if best is None:
                     best = product
 
+        # 2. Mock Generation with Proactive Quota Check
         if best is None:
-            # Ingredient completely missing from DB? Let the AI imagine it and stock it instantly!
-            print(f"Ingredient '{ingredient_name}' missing, auto-generating...")
-            best = await generate_mock_product(ingredient_name, buyer_lat, buyer_lng)
+            # V4 Logic: If we are low on quota (proactive check), we stop generating new products
+            # to ensure the UI remains fast and the user sees what IS available.
+            
+            logger.info(f"Ingredient '{ingredient_name}' missing, checking quota for generation...")
+            
+            # Check if ANY key has ANY model with available RPD
+            can_generate = False
+            from services.ai.gemini_service import API_KEYS, MODEL_PRIORITY
+            for key in API_KEYS:
+                for model in MODEL_PRIORITY:
+                    if manager.can_use(key, model):
+                        can_generate = True
+                        break
+                if can_generate: break
+
+            if can_generate:
+                best = await generate_mock_product(ingredient_name, buyer_lat, buyer_lng)
+            
+            if best is None:
+                is_partial = True
+                message = "Showing partial results due to AI usage limits."
+                logger.warning(f"Skipping auto-generation for '{ingredient_name}' - Quota limit.")
 
         results.append({
             "ingredient": ingredient_name,
@@ -120,102 +146,70 @@ async def find_ingredients_from_db(ingredients: list, buyer_lat: float = None, b
             "found": best is not None
         })
 
-    return results
+    return {
+        "results": results,
+        "meta": {
+            "partial": is_partial,
+            "message": message
+        }
+    }
 
 
-async def generate_mock_product(query: str, lat: float = None, lng: float = None, model_name: str = DEFAULT_MODEL) -> dict:
-    """Generate a realistic mock product using Gemini when a search turns up empty, saving it to MongoDB instantly."""
-    resolved_model = ALLOWED_MODELS.get(model_name, DEFAULT_MODEL)
+async def generate_mock_product(query: str, lat: float = None, lng: float = None) -> dict:
+    """Generate a realistic mock product using GeminiService with safety checks."""
+    
+    # 1. Safety Filter (sentences/verbs)
+    if len(query.split()) > 5 or len(query) > 50 or any(verb in query.lower() for verb in ["make", "cook", "prepare", "find"]):
+        return None
+
+    prompt = f"Create ONE realistic grocery product for search term: '{query}'. Return ONLY JSON format: {{\"name\": \"...\", \"description\": \"...\", \"price\": 2.99, \"category\": \"...\", \"unit\": \"...\", \"tags\": [...]}}"
+    
     try:
-        prompt = f"""A user searched a grocery app for "{query}" but we have no matching products.
-Create ONE realistic grocery product that perfectly fulfills this user's search intent.
-Make the price realistic.
-Return ONLY valid JSON (no markdown fences, no explanation):
-{{
-    "name": "Product Name",
-    "description": "Appealing description of the product.",
-    "price": 2.99,
-    "category": "Groceries",
-    "unit": "1 piece",
-    "tags": ["tag1", "tag2"]
-}}"""
-        response = _client.models.generate_content(
-            model=resolved_model,
-            contents=prompt,
-        )
-        text = response.text.strip()
+        response_text = await gemini_service.generate_content(prompt)
+        if not response_text:
+            return None # Fail silently or use rule-based fallback below
+
+        text = response_text.strip()
         if text.startswith("```"):
             text = text.split("```")[1]
             if text.startswith("json"):
                 text = text[4:]
 
         data = json.loads(text.strip())
-
-    except Exception as e:
-        print(f"AI Generation failed ({e}), using rule-based fallback for '{query}'")
-        
-        # Determine a reasonable category
+    except:
+        # Final Rule-Based Fallback if AI fails completely
         q_lower = query.lower()
         category = "Groceries"
-        if any(w in q_lower for w in ["chicken", "meat", "beef", "pork"]): category = "Meat"
-        elif any(w in q_lower for w in ["onion", "tomato", "potato", "carrot", "pepper"]): category = "Vegetables"
-        elif any(w in q_lower for w in ["apple", "banana", "fruit", "mango"]): category = "Fruits"
-        elif any(w in q_lower for w in ["milk", "cheese", "butter", "cream"]): category = "Dairies"
-        elif any(w in q_lower for w in ["cake", "bread", "cookie", "muffin"]): category = "Bakery"
-        elif any(w in q_lower for w in ["cola", "drink", "juice", "soda", "water"]): category = "Beverages"
+        if any(w in q_lower for w in ["chicken", "meat", "beef"]): category = "Meat"
+        elif any(w in q_lower for w in ["onion", "potato", "carrot"]): category = "Vegetables"
+        elif any(w in q_lower for w in ["apple", "fruit", "mango"]): category = "Fruits"
+        elif any(w in q_lower for w in ["milk", "cheese", "dairy"]): category = "Dairy"
 
         data = {
             "name": query.title(),
             "description": f"Fresh and high-quality {query} sourced from local vendors.",
-            "price": random.choice([29, 49, 99, 149, 199]),
+            "price": random.choice([29, 49, 99, 149]),
             "category": category,
             "unit": "1 unit",
             "tags": [query.lower(), category.lower(), "fresh"]
         }
 
-        # Reuse same seller/location logic from above inside the same function scope
-        # We need to make sure the seller/location variables are defined
-        try:
-            # Note: We repeat the logic here or restructure to avoid repetition
-            # For simplicity in this edit, we'll just ensure data is set and proceed to common doc creation
-            pass 
-        except:
-            pass
-
-    # --- Common Document Creation (Shared by AI and Fallback) ---
+    # Common Document Creation
     try:
         from database import get_users_collection, get_products_collection
         from services.semantic_search import embed_text
         from datetime import datetime
+        from bson import ObjectId
 
         users_col = get_users_collection()
         products_col = get_products_collection()
 
-        # Dominant Seller Selection
-        pipeline = [
-            {"$group": {"_id": "$seller_id", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 1}
-        ]
-        top_seller_cursor = products_col.aggregate(pipeline)
-        top_seller_res = await top_seller_cursor.to_list(length=1)
+        # Selection of a relevant seller (Jaipur based)
+        seller = await users_col.find_one({"role": "seller"})
+        seller_id = str(seller["_id"]) if seller else "000000000000000000000000"
+        seller_name = seller.get("name", "Local Shop") if seller else "Local Shop"
 
-        if top_seller_res:
-            top_seller_id = top_seller_res[0]["_id"]
-            from bson import ObjectId
-            try:
-                seller = await users_col.find_one({"_id": ObjectId(top_seller_id)})
-            except:
-                seller = await users_col.find_one({"seller_id": top_seller_id})
-            
-            seller_id = str(seller["_id"]) if seller else top_seller_id
-            seller_name = seller.get("name", "Top Seller") if seller else "Top Seller"
-        else:
-            seller = await users_col.find_one({"role": "seller"})
-            seller_id = str(seller["_id"]) if seller else "000000000000000000000000"
-            seller_name = seller.get("name", "Auto-Generated Shop") if seller else "Auto-Generated Shop"
-
-        product_lat = lat if lat else 26.8500 # Jaipur center
+        product_lat = lat if lat else 26.8500
         product_lng = lng if lng else 75.8200
 
         doc = {
@@ -223,16 +217,16 @@ Return ONLY valid JSON (no markdown fences, no explanation):
             "description": data.get("description", "Auto-generated product"),
             "price": float(data.get("price", 2.99)),
             "category": data.get("category", "General"),
-            "barcode": None,
-            "stock": 100,
+            "barcode": f"GEN-{random.randint(100000, 999999)}",
+            "stock": 50,
             "unit": data.get("unit", "1 pc"),
             "image_url": f"https://placehold.co/400x400?text={query.replace(' ', '+')}",
             "tags": data.get("tags", [query]),
             "seller_id": seller_id,
             "seller_name": seller_name,
             "location": {"type": "Point", "coordinates": [product_lng, product_lat]},
-            "embedding": embed_text(f"{data.get('name')} {data.get('description')} {data.get('category')} {' '.join(data.get('tags', []))}"),
-            "rating": 5.0,
+            "embedding": embed_text(f"{data.get('name')} {data.get('description')}"),
+            "rating": 4.5,
             "total_sold": 0,
             "is_ai_generated": True,
             "created_at": datetime.utcnow()
@@ -242,11 +236,7 @@ Return ONLY valid JSON (no markdown fences, no explanation):
         doc["id"] = str(res.inserted_id)
         doc.pop("_id", None)
         doc.pop("embedding", None)
-
-        if lat and lng:
-            doc["distance_km"] = 0.0
-
         return doc
-    except Exception as final_e:
-        print(f"Critical error in generate_mock_product: {final_e}")
+    except Exception as e:
+        logger.error(f"Critical error in mock product creation: {e}")
         return None

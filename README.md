@@ -8,11 +8,14 @@
 |-------|-----------|
 | Frontend | Next.js 14 (App Router) + TypeScript + Tailwind CSS |
 | Backend | FastAPI (Python) + Uvicorn |
-| AI/ML | Google Gemini (recipe agent), sentence-transformers (semantic search), face_recognition (dlib) |
+| AI/ML | **Gemini (V4 Architecture)**: Optimized sequential fallback (`3.1-flash-lite`, `2.5-flash-lite`, `2.5-flash`) with multi-key rotation and proactive quota management. |
+| Search | sentence-transformers (semantic intent-based search) |
+| Image System | High-accuracy validation: Unsplash ↔ OpenFoodFacts ↔ OpenBeautyFacts |
 | Primary DB | MongoDB (+ Motor for async) |
 | Graph DB | Neo4j (SIMILAR_TO, BOUGHT_WITH relationships) |
 | Payments | Razorpay (test mode) |
 | Barcode | OpenCV + zxing-cpp + pyzbar (Dual-Engine backend pipeline) |
+| Face ID | face_recognition (dlib) |
 
 ---
 
@@ -77,7 +80,8 @@ App available at: **http://localhost:3000**
 | `NEO4J_URI` | Neo4j bolt connection (optional) |
 | `RAZORPAY_KEY_ID` | Razorpay test key ID |
 | `RAZORPAY_KEY_SECRET` | Razorpay test secret |
-| `GEMINI_API_KEY` | Google Gemini API key |
+| `GEMINI_API_KEYS` | (New) Comma-separated list of Gemini API keys for automatic rotation and high-load fallback. |
+| `GEMINI_API_KEY` | Legacy single Gemini API key (still supported). |
 
 Get Gemini API key: [aistudio.google.com](https://aistudio.google.com)  
 Get Razorpay test keys: [dashboard.razorpay.com](https://dashboard.razorpay.com)
@@ -107,12 +111,14 @@ NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_...
 - **Dual Login**: Buyer / Seller roles with separate dashboards
 - **Face ID**: Register face during signup, login by looking at camera
 - **Intent Search**: "I have a cold" → surfaces Honey, Ginger Tea, Tulsi Drops
+- **High-Accuracy Image System**: Intelligent keyword-to-image mapping verified against Unsplash, OpenFoodFacts, and OpenBeautyFacts. No generic placeholders.
 - **Location**: Nearest shops auto-prioritized via GPS + geo-distance
-- **Pro Barcode Scanner**: High-accuracy dual-engine backend (OpenCV/ZXing) scanning with OpenFoodFacts auto-fill integration, featuring stateless JWT authentication for rapid zero-latency frame processing.
+- **Pro Barcode Scanner**: High-accuracy dual-engine backend (OpenCV/ZXing) scanning with OpenFoodFacts auto-fill integration.
 - **Razorpay**: Test-mode payment checkout with signature verification
+- **Search Hardening**: Optimized JSON array parsing and regex sanitization for error-free natural language queries.
 
 ### Stage 2 — Automator
-- **Recipe Agent**: Type "Make Pizza for 4" → AI finds all ingredients from local inventory
+- **Recipe Agent (V4)**: High-efficiency sequential AI architecture. Type "Make Pizza" → AI parses ingredients in batches and finds them in local inventory, even under heavy quota pressure.
 - **Neo4j Graph**: Products connected via `BOUGHT_WITH` + `SIMILAR_TO` for smart recommendations
 
 ### Stage 3 — Orchestrator
@@ -165,10 +171,13 @@ Smarter-Blinkit/
 │   │   ├── agent.py      # Recipe agent endpoint
 │   │   └── analytics.py  # Storeboard + money map
 │   └── services/
+│       ├── ai/
+│       │   ├── gemini_service.py      # Resilient sequential AI fallback logic
+│       │   └── rate_limit_manager.py  # Thread-safe RPM/RPD tracking
 │       ├── face_auth.py         # face_recognition lib
 │       ├── semantic_search.py   # sentence-transformers
 │       ├── neo4j_service.py     # Graph DB operations
-│       ├── recipe_agent.py      # Gemini integration
+│       ├── recipe_agent.py      # Upgraded Recipe Agent logic
 │       ├── jwt_utils.py
 │       └── dependencies.py
 └── .env.example
