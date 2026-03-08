@@ -7,6 +7,7 @@ from services.dependencies import require_buyer
 from services.neo4j_service import record_order_purchase
 from bson import ObjectId
 import uuid
+from services.delivery_route_optimizer import DeliveryRouteOptimizer
 
 router = APIRouter()
 
@@ -19,6 +20,49 @@ class CreateOrderReq(BaseModel):
     delivery_address: str
     buyer_lat: Optional[float] = None
     buyer_lng: Optional[float] = None
+
+class EstimateReq(BaseModel):
+    items: List[CartItemReq]
+    delivery_address: str
+    buyer_lat: Optional[float] = None
+    buyer_lng: Optional[float] = None
+
+@router.post("/estimate")
+async def estimate_delivery(req: EstimateReq):
+    """Calculate delivery distance, time and optimized route."""
+    try:
+        products_col = get_products_collection()
+        users_col = get_users_collection()
+
+        optimizer = DeliveryRouteOptimizer(req.buyer_lat, req.buyer_lng)
+        
+        # 1. Resolve address if coordinates missing
+        if not req.buyer_lat or not req.buyer_lng:
+            success = await optimizer.resolve_buyer_location(req.delivery_address)
+            if not success:
+                raise HTTPException(status_code=400, detail="Could not resolve delivery address")
+
+        # 2. Map items to real products with locations
+        cart_items = [item.dict() for item in req.items]
+        # We need product names for the optimizer's greedy matching
+        for item in cart_items:
+            p = await products_col.find_one({"_id": ObjectId(item["product_id"])})
+            if p:
+                item["product_name"] = p["name"]
+
+        # 3. Step 1: Optimize Shops (Reduction)
+        shops = await optimizer.optimize_shops(cart_items, products_col, users_col)
+        
+        # 4. Step 2: Solve Route
+        plan = await optimizer.solve_route(shops)
+        
+        return plan
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ ERROR in estimate_delivery: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Failed to calculate delivery estimate")
 
 class DemoPaymentReq(BaseModel):
     order_id: str  # internal MongoDB _id

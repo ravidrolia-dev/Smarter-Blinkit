@@ -16,6 +16,7 @@ const buyerNav = [
 
 const sellerNav = [
     { href: "/seller", label: "📊 Dashboard", exact: true },
+    { href: "/seller/top-picks", label: "🏆 Top Picks" },
     { href: "/seller/inventory", label: "📦 Inventory" },
     { href: "/seller/barcode", label: "📷 Barcode Scanner" },
     { href: "/seller/products/new", label: "➕ Add Product" },

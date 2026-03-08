@@ -203,6 +203,12 @@ export default function CartPage() {
     const [orderId, setOrderId] = useState<string | null>(null);
     const [showPayModal, setShowPayModal] = useState(false);
     const [total, setTotal] = useState(0);
+    const [estimate, setEstimate] = useState<{
+        total_distance_km: number;
+        estimated_time_minutes: number;
+        optimal_route_summary: string;
+    } | null>(null);
+    const [loadingEstimate, setLoadingEstimate] = useState(false);
     const [detecting, setDetecting] = useState(false);
     const { status, location, requestLocation } = useLocation();
     const { user } = useAuth();
@@ -243,6 +249,33 @@ export default function CartPage() {
             })
             .finally(() => setDetecting(false));
     }, [location]);
+
+    // Delivery estimation logic
+    useEffect(() => {
+        if (!address.trim() || cart.length === 0) {
+            setEstimate(null);
+            return;
+        }
+
+        const timer = setTimeout(async () => {
+            setLoadingEstimate(true);
+            try {
+                const res = await ordersApi.estimate({
+                    items: cart.map((i) => ({ product_id: i.id, quantity: i.qty })),
+                    delivery_address: address,
+                    buyer_lat: location?.lat,
+                    buyer_lng: location?.lng
+                });
+                setEstimate(res.data);
+            } catch (err) {
+                console.error("Estimation failed:", err);
+            } finally {
+                setLoadingEstimate(false);
+            }
+        }, 1200); // 1.2s debounce to avoid over-calling Nominatim/ORS
+
+        return () => clearTimeout(timer);
+    }, [address, cart, location]);
 
     const saveCart = (c: CartItem[]) => {
         setCart(c);
@@ -354,8 +387,49 @@ export default function CartPage() {
                     ))}
                 </div>
 
-                {/* Order Summary */}
+                {/* Sidebar */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    {/* Delivery Summary (New Feature) */}
+                    <div className="card-flat" style={{ borderLeft: estimate ? "4px solid var(--yellow-primary)" : "1px solid var(--gray-100)" }}>
+                        <h3 style={{ fontSize: 16, fontWeight: 800, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                            🚚 Delivery Summary
+                        </h3>
+
+                        {loadingEstimate ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--gray-400)", fontSize: 13 }}>
+                                <div className="animate-spin" style={{ width: 14, height: 14, border: "2px solid var(--gray-200)", borderTopColor: "var(--yellow-primary)", borderRadius: "50%" }} />
+                                Calculating best route...
+                            </div>
+                        ) : estimate ? (
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                <div style={{ background: "var(--gray-50)", padding: "10px 12px", borderRadius: 12 }}>
+                                    <p style={{ fontSize: 10, color: "var(--gray-400)", fontWeight: 700, textTransform: "uppercase" }}>Distance</p>
+                                    <p style={{ fontSize: 18, fontWeight: 900 }}>{estimate.total_distance_km}<span style={{ fontSize: 12, fontWeight: 500 }}> km</span></p>
+                                </div>
+                                <div style={{ background: "var(--gray-50)", padding: "10px 12px", borderRadius: 12 }}>
+                                    <p style={{ fontSize: 10, color: "var(--gray-400)", fontWeight: 700, textTransform: "uppercase" }}>Est. Time</p>
+                                    <p style={{ fontSize: 18, fontWeight: 900 }}>{estimate.estimated_time_minutes}<span style={{ fontSize: 12, fontWeight: 500 }}> min</span></p>
+                                </div>
+                                <div style={{ gridColumn: "span 2", borderTop: "1px dashed var(--gray-200)", paddingTop: 8 }}>
+                                    <p style={{ fontSize: 10, color: "var(--gray-400)", fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>Optimized Route</p>
+                                    <p style={{ fontSize: 12, color: "var(--gray-700)", lineHeight: 1.4 }}>
+                                        {estimate.optimal_route_summary.split(" -> ").map((step, idx, arr) => (
+                                            <span key={idx}>
+                                                {step === "Your Home" ? "🏠 " : "🏪 "}
+                                                <span style={{ fontWeight: 600 }}>{step}</span>
+                                                {idx < arr.length - 1 && <span style={{ color: "var(--gray-300)", margin: "0 4px" }}>➔</span>}
+                                            </span>
+                                        ))}
+                                    </p>
+                                </div>
+                            </div>
+                        ) : (
+                            <p style={{ fontSize: 13, color: "var(--gray-400)", fontStyle: "italic" }}>
+                                Enter address to see delivery estimate
+                            </p>
+                        )}
+                    </div>
+
                     <div className="card-flat">
                         <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Order Summary</h3>
                         <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 14 }}>

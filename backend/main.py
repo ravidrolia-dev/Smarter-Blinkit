@@ -4,8 +4,6 @@ from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
-
 from routes import auth, products, search, orders, inventory, agent, analytics
 
 def _preload_model():

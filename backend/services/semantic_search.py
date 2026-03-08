@@ -14,14 +14,7 @@ import numpy as np
 
 # ── Model setup ──────────────────────────────────────────────────────────────
 _model = None
-SEMANTIC_AVAILABLE = False
-
-try:
-    from sentence_transformers import SentenceTransformer
-    SEMANTIC_AVAILABLE = True
-except ImportError:
-    print("sentence-transformers not installed - keyword fallback active.")
-
+SEMANTIC_AVAILABLE = True # Assume available if package exists, checked lazily
 
 def get_model() -> "SentenceTransformer":
     global _model

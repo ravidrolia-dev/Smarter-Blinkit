@@ -8,16 +8,22 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/smarter_blinkit")
 
 import certifi
 
-# Async client (for FastAPI endpoints) — lazily connected, non-blocking
-# Async client with short timeout so connection failures fail fast
-async_client = AsyncIOMotorClient(
-    MONGO_URI,
-    serverSelectionTimeoutMS=5000,
-    connectTimeoutMS=5000,
-    socketTimeoutMS=5000,
-    tlsCAFile=certifi.where() # Provide explicit Windows CA certificates to avoid SSL handshakes drops
-)
-async_db = async_client.smarter_blinkit
+try:
+    async_client = AsyncIOMotorClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        socketTimeoutMS=5000,
+        tlsCAFile=certifi.where() # Provide explicit Windows CA certificates to avoid SSL handshakes drops
+    )
+    # Database objects do not implement truth value testing, compare with None
+    async_db = async_client.get_default_database()
+    if async_db is None:
+        async_db = async_client.smarter_blinkit
+except Exception as e:
+    print(f"CRITICAL: Failed to initialize MongoDB client: {e}")
+    # Still define async_db to avoid NameError elsewhere, but it will fail on use
+    async_db = None
 
 # Collections
 def get_users_collection():
