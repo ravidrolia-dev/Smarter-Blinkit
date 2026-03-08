@@ -52,7 +52,7 @@ function AddressBar() {
     }, [location]);
 
     return (
-        <div className="address-bar" style={{
+        <div className="address-bar print:!hidden" style={{
             backgroundColor: "#fffbeb",
             borderBottom: "1px solid #fde68a",
             padding: "0 24px",
@@ -107,7 +107,7 @@ export default function DashboardLayout({ children, role }: { children: React.Re
     return (
         <div>
             {/* Navbar */}
-            <nav className="navbar">
+            <nav className="navbar print:!hidden">
                 <div className="navbar-logo">
                     <span>⚡</span>
                     <span>Smarter<span>BlinkIt</span></span>
@@ -137,7 +137,7 @@ export default function DashboardLayout({ children, role }: { children: React.Re
             <AddressBar />
 
             {/* Sidebar */}
-            <aside className="sidebar">
+            <aside className="sidebar print:!hidden">
                 <div className="px-4 mb-4">
                     <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
                         {role === "buyer" ? "Buyer Portal" : "Seller Portal"}
@@ -162,8 +162,8 @@ export default function DashboardLayout({ children, role }: { children: React.Re
             </aside>
 
             {/* Main Content */}
-            <main className="page-with-sidebar">
-                <div className="page-content">{children}</div>
+            <main className="page-with-sidebar print:!p-0 print:!m-0 print:!block print:!static">
+                <div className="page-content print:!p-0 print:!m-0">{children}</div>
             </main>
         </div>
     );

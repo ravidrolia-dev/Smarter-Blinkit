@@ -15,11 +15,22 @@ class CartItemReq(BaseModel):
     product_id: str
     quantity: int
 
+class RouteStop(BaseModel):
+    type: str # 'shop' or 'buyer'
+    name: str
+    lat: float
+    lng: float
+    items: Optional[List[str]] = None
+
 class CreateOrderReq(BaseModel):
     items: List[CartItemReq]
     delivery_address: str
     buyer_lat: Optional[float] = None
     buyer_lng: Optional[float] = None
+    route_stops: Optional[List[RouteStop]] = None
+    route_distance_km: Optional[float] = None
+    route_time_minutes: Optional[int] = None
+    route_geometry: Optional[str] = None
 
 class EstimateReq(BaseModel):
     items: List[CartItemReq]
@@ -131,6 +142,10 @@ async def create_order(req: CreateOrderReq, buyer=Depends(require_buyer)):
             "status": "pending",
             "payment_id": None,
             "shop_groups": shop_groups,
+            "route_stops": [s.dict() for s in req.route_stops] if req.route_stops else [],
+            "route_distance_km": req.route_distance_km,
+            "route_time_minutes": req.route_time_minutes,
+            "route_geometry": req.route_geometry,
         }
 
         result = await orders_col.insert_one(order_doc)
@@ -215,3 +230,19 @@ async def my_orders(buyer=Depends(require_buyer)):
     for o in orders:
         o["id"] = str(o.pop("_id"))
     return orders
+
+@router.get("/{order_id}")
+async def get_order(order_id: str, buyer=Depends(require_buyer)):
+    orders_col = get_orders_collection()
+    try:
+        order = await orders_col.find_one({"_id": ObjectId(order_id)})
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order["buyer_id"] != str(buyer["_id"]):
+            raise HTTPException(status_code=403, detail="Access denied")
+        order["id"] = str(order.pop("_id"))
+        return order
+    except Exception as e:
+        if "InvalidId" in str(type(e)) or "invalid" in str(e).lower():
+             raise HTTPException(status_code=400, detail="Invalid order ID format")
+        raise

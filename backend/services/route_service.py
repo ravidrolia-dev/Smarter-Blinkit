@@ -20,7 +20,7 @@ class RouteService:
     async def get_route_metrics(self, coordinates: List[List[float]]) -> Optional[Dict[str, Any]]:
         """
         coordinates: List of [lng, lat] pairs.
-        Returns {distance_km, duration_min} or None.
+        Returns {distance_km, duration_min, geometry} or None.
         """
         if len(coordinates) < 2:
             return {"distance_km": 0, "duration_min": 0}
@@ -50,10 +50,12 @@ class RouteService:
                 summary = data["routes"][0]["summary"]
                 distance_m = summary["distance"]
                 duration_s = summary["duration"]
+                geometry = data["routes"][0].get("geometry")
 
                 return {
                     "distance_km": round(distance_m / 1000, 2),
-                    "duration_min": round(duration_s / 60)
+                    "duration_min": round(duration_s / 60),
+                    "geometry": geometry
                 }
         except Exception as e:
             logger.error(f"Routing error: {e}")
@@ -80,6 +82,7 @@ class RouteService:
                 "total_distance_km": metrics["distance_km"],
                 "total_duration_minutes": metrics["duration_min"],
                 "route_order": coordinates,
+                "geometry": metrics.get("geometry")
             }
         return None
 

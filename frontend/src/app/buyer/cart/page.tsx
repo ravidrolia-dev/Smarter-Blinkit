@@ -6,6 +6,12 @@ import { useAuth } from "@/lib/auth-context";
 import { useLocation } from "@/hooks/useLocation";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import dynamic from "next/dynamic";
+
+const DeliveryRouteMap = dynamic(() => import("@/components/DeliveryRouteMap"), {
+    ssr: false,
+    loading: () => <div className="h-48 bg-gray-50 animate-pulse rounded-2xl flex items-center justify-center text-gray-400 text-xs font-medium">Loading Map...</div>
+});
 
 type CartItem = {
     id: string; name: string; price: number; qty: number;
@@ -207,6 +213,8 @@ export default function CartPage() {
         total_distance_km: number;
         estimated_time_minutes: number;
         optimal_route_summary: string;
+        stops: any[];
+        geometry?: string;
     } | null>(null);
     const [loadingEstimate, setLoadingEstimate] = useState(false);
     const [detecting, setDetecting] = useState(false);
@@ -303,6 +311,12 @@ export default function CartPage() {
             const res = await ordersApi.create({
                 items: cart.map((i) => ({ product_id: i.id, quantity: i.qty })),
                 delivery_address: address,
+                buyer_lat: location?.lat,
+                buyer_lng: location?.lng,
+                route_stops: estimate?.stops,
+                route_distance_km: estimate?.total_distance_km,
+                route_time_minutes: estimate?.estimated_time_minutes,
+                route_geometry: estimate?.geometry,
             });
             setOrderId(res.data.order_id);
             setShowPayModal(true);
@@ -421,6 +435,12 @@ export default function CartPage() {
                                             </span>
                                         ))}
                                     </p>
+                                </div>
+                                <div style={{ gridColumn: "span 2", marginTop: 12, border: "2px solid #FFD000", padding: "12px", borderRadius: 20, background: "white" }}>
+                                    <div style={{ fontSize: "10px", fontWeight: "bold", color: "#6b7280", marginBottom: 12, textAlign: "center", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                        🗺️ Visual Delivery Journey
+                                    </div>
+                                    <DeliveryRouteMap stops={estimate.stops} geometry={estimate.geometry} height="240px" />
                                 </div>
                             </div>
                         ) : (

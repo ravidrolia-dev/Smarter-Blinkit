@@ -63,6 +63,7 @@ export const ordersApi = {
     pay: (order_id: string, card_name: string, card_last4: string) =>
         api.post("/orders/pay", { order_id, card_name, card_last4 }),
     myOrders: () => api.get("/orders/my-orders"),
+    get: (id: string) => api.get(`/orders/${id}`),
     estimate: (data: any) => api.post("/orders/estimate", data),
 };
 

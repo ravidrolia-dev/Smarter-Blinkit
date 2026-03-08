@@ -141,12 +141,14 @@ class DeliveryRouteOptimizer:
             return {
                 "total_distance_km": 0, 
                 "estimated_time_minutes": 0, 
-                "shops_sequence": [],
+                "stops": [],
                 "optimal_route_summary": "Your Home"
             }
 
-        # Step 1: Greedy Nearest Neighbor (approximate sequence)
-        sequence = []
+        # Step 1: Improved Greedy Nearest Neighbor (working backwards from home)
+        # We start from home and find the closest shop, then closest to that shop, etc.
+        # Then reverse the list so it ends at home.
+        backward_sequence = []
         remaining = list(shops)
         curr_lat, curr_lng = self.buyer_lat, self.buyer_lng
         
@@ -160,23 +162,26 @@ class DeliveryRouteOptimizer:
                     nearest_idx = i
             
             shop = remaining.pop(nearest_idx)
-            sequence.append(shop)
+            backward_sequence.append(shop)
             curr_lat, curr_lng = shop["lat"], shop["lng"]
 
+        # Reverse to get the forward pickup sequence: Shop1 -> Shop2 -> ... -> Home
+        sequence = backward_sequence[::-1]
+
         # Step 2: Build coordinate list for RouteService [lng, lat]
-        # Delivery Journey: Shop1 -> Shop2 ... -> Buyer Home
         coords = []
         for s in sequence:
             coords.append([s["lng"], s["lat"]])
         coords.append([self.buyer_lng, self.buyer_lat])
 
-        # Step 3: Get real metrics from ORS (get_optimized_route uses driving-car routing)
+        # Step 3: Get real metrics and geometry from ORS
         route_result = await route_service.get_optimized_route(coords)
 
         if route_result:
             total_dist = route_result["total_distance_km"]
             travel_time = route_result["total_duration_minutes"]
             total_time = travel_time + (len(shops) * self.pickup_buffer_min)
+            geometry = route_result.get("geometry")
         else:
             # Fallback to Haversine straight-line estimate if ORS API is unavailable
             total_dist = 0.0
@@ -189,20 +194,31 @@ class DeliveryRouteOptimizer:
 
             travel_time = (total_dist / self.avg_speed_kmh) * 60
             total_time = travel_time + (len(shops) * self.pickup_buffer_min)
+            geometry = None
 
-        # Step 4: Finalize shop sequence info
-        final_sequence = []
+        # Step 4: Finalize stop sequence for mapping
+        stops = []
         for s in sequence:
-            final_sequence.append({
-                "shop_id": s["shop_id"],
-                "shop_name": s["shop_name"],
-                "distance_from_user_km": round(calculate_distance(self.buyer_lat, self.buyer_lng, s["lat"], s["lng"]), 2),
+            stops.append({
+                "type": "shop",
+                "name": s["shop_name"],
+                "lat": s["lat"],
+                "lng": s["lng"],
                 "items": s["items"]
             })
+        
+        # Finally, the buyer's home
+        stops.append({
+            "type": "buyer",
+            "name": "Your Home",
+            "lat": self.buyer_lat,
+            "lng": self.buyer_lng
+        })
 
         return {
             "total_distance_km": round(total_dist, 2),
             "estimated_time_minutes": round(total_time),
-            "shops_sequence": final_sequence,
+            "stops": stops,
+            "geometry": geometry,
             "optimal_route_summary": " -> ".join([s["shop_name"] for s in sequence]) + " -> Your Home"
         }
