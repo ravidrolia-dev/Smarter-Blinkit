@@ -22,7 +22,7 @@ FALLBACK_IMAGE = "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80
 
 # Shared Gemini client
 _client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
-_GENERATION_MODEL = "gemini-2.0-flash"
+_GENERATION_MODEL = "gemini-3.1-flash-lite"
 
 CATEGORIES = ["Groceries", "Snacks", "Beverages", "Dairy", "Personal Care", "Household", "Health & Wellness", "Electronics", "Stationery", "Baby Products", "Bakery & Cakes", "Fruits & Vegetables", "Meats & Seafood"]
 

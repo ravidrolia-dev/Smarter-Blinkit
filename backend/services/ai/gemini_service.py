@@ -92,8 +92,10 @@ class GeminiService:
                     result = await self._single_attempt(api_key, model, prompt, system_instruction, key_index)
                     if result:
                         return result
+                    else:
+                        logger.warning(f"Quota exceeded or error → Fallback from {model}")
         
-        logger.error("AI service temporarily unavailable due to quota limits.")
+        logger.error("AI service temporarily unavailable. No working models/keys found.")
         return None
 
     async def _single_attempt(self, api_key: str, model: str, prompt: str, system_instruction: str, key_index: int):
@@ -101,7 +103,7 @@ class GeminiService:
         client = self.clients.get(api_key)
         if not client: return None
 
-        logger.info(f"[Attempt] Using {model} (KEY_{key_index + 1})...")
+        logger.info(f"Trying model: {model} (KEY_{key_index + 1})...")
         try:
             # Using the async 'aio' sub-client with proper config types
             config = None

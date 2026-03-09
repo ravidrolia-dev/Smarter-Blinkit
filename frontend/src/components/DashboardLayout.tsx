@@ -16,6 +16,7 @@ const buyerNav = [
 
 const sellerNav = [
     { href: "/seller", label: "📊 Dashboard", exact: true },
+    { href: "/seller/demand", label: "📢 Demand Requests" },
     { href: "/seller/top-picks", label: "🏆 Top Picks" },
     { href: "/seller/inventory", label: "📦 Inventory" },
     { href: "/seller/barcode", label: "📷 Barcode Scanner" },
@@ -24,9 +25,11 @@ const sellerNav = [
 ];
 
 function AddressBar() {
-    const { status, location, requestLocation } = useLocation();
+    const { status, location, requestLocation, refreshLocation, setManualLocation } = useLocation();
     const [address, setAddress] = useState<string | null>(null);
     const [fetching, setFetching] = useState(false);
+    const [showManual, setShowManual] = useState(false);
+    const [manualInput, setManualInput] = useState("");
 
     // Reverse geocode whenever we get a location
     useEffect(() => {
@@ -39,7 +42,6 @@ function AddressBar() {
             .then((r) => r.json())
             .then((data) => {
                 const a = data.address;
-                // Build a short human-readable address
                 const parts = [
                     a.road || a.suburb || a.neighbourhood,
                     a.city || a.town || a.village || a.county,
@@ -51,40 +53,115 @@ function AddressBar() {
             .finally(() => setFetching(false));
     }, [location]);
 
+    const handleManualSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!manualInput.trim()) return;
+        setFetching(true);
+        try {
+            const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(manualInput)}&format=json&limit=1`);
+            const data = await resp.json();
+            if (data && data.length > 0) {
+                setManualLocation(parseFloat(data[0].lat), parseFloat(data[0].lon));
+                setShowManual(false);
+                setManualInput("");
+                toast.success("Location updated!");
+            } else {
+                toast.error("Location not found.");
+            }
+        } catch {
+            toast.error("Search failed.");
+        } finally {
+            setFetching(false);
+        }
+    };
+
+    const handleRefresh = () => {
+        setFetching(true);
+        refreshLocation();
+    };
+
     return (
         <div className="address-bar print:!hidden" style={{
             backgroundColor: "#fffbeb",
             borderBottom: "1px solid #fde68a",
-            padding: "0 24px",
+            padding: "8px 24px",
             display: "flex",
             alignItems: "center",
+            justifyContent: "space-between",
             gap: 8,
             fontSize: 12,
         }}>
-            <span style={{ fontSize: 14 }}>📍</span>
-            {status === "granted" && address ? (
-                <span style={{ fontWeight: 600, color: "#92400e" }}>
-                    {fetching ? "Loading address…" : address}
-                </span>
-            ) : status === "granted" && fetching ? (
-                <span style={{ color: "#92400e" }}>Fetching address…</span>
-            ) : status === "requesting" ? (
-                <span style={{ color: "#92400e" }}>Detecting location…</span>
-            ) : status === "denied" ? (
-                <span style={{ color: "#b91c1c" }}>Location access denied — </span>
-            ) : (
-                <>
-                    <span style={{ color: "#78350f" }}>Deliver to —</span>
-                    <button
-                        onClick={requestLocation}
-                        style={{
-                            fontSize: 12, fontWeight: 700, color: "#d97706",
-                            background: "none", border: "none", cursor: "pointer",
-                            padding: 0, textDecoration: "underline",
-                        }}>
-                        Enable location
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 14 }}>📍</span>
+                {status === "granted" && address ? (
+                    <div className="flex items-center gap-2">
+                        <span style={{ fontWeight: 600, color: "#92400e" }}>
+                            {fetching ? "Updating…" : address}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setShowManual(!showManual)}
+                                className="text-[10px] font-bold text-yellow-700 hover:text-yellow-900 underline"
+                                style={{ background: "none", border: "none" }}>
+                                Change
+                            </button>
+                            <span className="text-yellow-300">|</span>
+                            <button
+                                onClick={handleRefresh}
+                                title="Refresh precision"
+                                className={`text-[10px] font-bold text-yellow-700 hover:text-yellow-900 flex items-center gap-1 ${fetching ? "animate-spin" : ""}`}
+                                style={{ background: "none", border: "none" }}>
+                                🔄 Refresh
+                            </button>
+                        </div>
+                    </div>
+                ) : status === "requesting" || fetching ? (
+                    <span style={{ color: "#92400e" }} className="flex items-center gap-2">
+                        <span className="animate-spin text-xs">🔄</span>
+                        {status === "requesting" ? "Detecting high accuracy location..." : "Fetching address..."}
+                    </span>
+                ) : (
+                    <>
+                        <span style={{ color: "#78350f" }}>Deliver to —</span>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={requestLocation}
+                                style={{
+                                    fontSize: 12, fontWeight: 700, color: "#d97706",
+                                    background: "none", border: "none", cursor: "pointer",
+                                    padding: 0, textDecoration: "underline",
+                                }}>
+                                Enable GPS location
+                            </button>
+                            <span className="text-gray-300">|</span>
+                            <button
+                                onClick={() => setShowManual(!showManual)}
+                                style={{
+                                    fontSize: 12, fontWeight: 700, color: "#d97706",
+                                    background: "none", border: "none", cursor: "pointer",
+                                    padding: 0, textDecoration: "underline",
+                                }}>
+                                Enter manually
+                            </button>
+                        </div>
+                    </>
+                )}
+            </div>
+
+            {showManual && (
+                <form onSubmit={handleManualSubmit} className="flex gap-2">
+                    <input
+                        type="text"
+                        value={manualInput}
+                        onChange={(e) => setManualInput(e.target.value)}
+                        placeholder="Enter area or city..."
+                        className="px-2 py-1 border border-yellow-300 rounded text-xs outline-none focus:ring-1 focus:ring-yellow-500"
+                        style={{ width: 180 }}
+                    />
+                    <button type="submit" className="bg-yellow-500 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-yellow-600">
+                        Go
                     </button>
-                </>
+                </form>
             )}
         </div>
     );

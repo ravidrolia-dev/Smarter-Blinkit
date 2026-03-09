@@ -13,6 +13,11 @@ const DeliveryRouteMap = dynamic(() => import("@/components/DeliveryRouteMap"), 
     loading: () => <div className="h-48 bg-gray-50 animate-pulse rounded-2xl flex items-center justify-center text-gray-400 text-xs font-medium">Loading Map...</div>
 });
 
+const LocationPickerMap = dynamic(() => import("@/components/LocationPickerMap"), {
+    ssr: false,
+    loading: () => <div className="h-48 bg-gray-100 animate-pulse rounded-2xl" />
+});
+
 type CartItem = {
     id: string; name: string; price: number; qty: number;
     seller_id: string; seller_name?: string; unit?: string;
@@ -218,7 +223,8 @@ export default function CartPage() {
     } | null>(null);
     const [loadingEstimate, setLoadingEstimate] = useState(false);
     const [detecting, setDetecting] = useState(false);
-    const { status, location, requestLocation } = useLocation();
+    const [manualCoords, setManualCoords] = useState<{ lat: number, lng: number } | null>(null);
+    const { status, location, requestLocation, refreshLocation } = useLocation();
     const { user } = useAuth();
     const router = useRouter();
 
@@ -231,12 +237,16 @@ export default function CartPage() {
         setTotal(cart.reduce((s, i) => s + i.price * i.qty, 0));
     }, [cart]);
 
-    // Auto-detect address logic
+    // Auto-detect address logic (and update on marker drag)
     useEffect(() => {
-        if (!location) return;
+        const targetLat = manualCoords?.lat || location?.lat;
+        const targetLng = manualCoords?.lng || location?.lng;
+
+        if (!targetLat || !targetLng) return;
+
         setDetecting(true);
         fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${location.lat}&lon=${location.lng}&format=json&addressdetails=1`,
+            `https://nominatim.openstreetmap.org/reverse?lat=${targetLat}&lon=${targetLng}&format=json&addressdetails=1`,
             { headers: { "Accept-Language": "en" } }
         )
             .then((r) => r.json())
@@ -246,17 +256,15 @@ export default function CartPage() {
                     a.road || a.suburb || a.neighbourhood,
                     a.city || a.town || a.village || a.county,
                     a.state,
-                    a.postcode
                 ].filter(Boolean);
                 setAddress(parts.join(", "));
-                toast.success("Location detected!");
+                if (!manualCoords) toast.success("Location detected!");
             })
             .catch(() => {
-                setAddress(`${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`);
-                toast.error("Could not fetch full address, using coordinates.");
+                setAddress(`${targetLat.toFixed(4)}, ${targetLng.toFixed(4)}`);
             })
             .finally(() => setDetecting(false));
-    }, [location]);
+    }, [location, manualCoords]);
 
     // Delivery estimation logic
     useEffect(() => {
@@ -265,14 +273,17 @@ export default function CartPage() {
             return;
         }
 
+        const currentLat = manualCoords?.lat || location?.lat;
+        const currentLng = manualCoords?.lng || location?.lng;
+
         const timer = setTimeout(async () => {
             setLoadingEstimate(true);
             try {
                 const res = await ordersApi.estimate({
                     items: cart.map((i) => ({ product_id: i.id, quantity: i.qty })),
                     delivery_address: address,
-                    buyer_lat: location?.lat,
-                    buyer_lng: location?.lng
+                    buyer_lat: currentLat,
+                    buyer_lng: currentLng
                 });
                 setEstimate(res.data);
             } catch (err) {
@@ -280,10 +291,10 @@ export default function CartPage() {
             } finally {
                 setLoadingEstimate(false);
             }
-        }, 1200); // 1.2s debounce to avoid over-calling Nominatim/ORS
+        }, 1200);
 
         return () => clearTimeout(timer);
-    }, [address, cart, location]);
+    }, [address, cart, location, manualCoords]);
 
     const saveCart = (c: CartItem[]) => {
         setCart(c);
@@ -308,11 +319,14 @@ export default function CartPage() {
         if (cart.length === 0) return toast.error("Your cart is empty");
         setLoadingOrder(true);
         try {
+            const currentLat = manualCoords?.lat || location?.lat;
+            const currentLng = manualCoords?.lng || location?.lng;
+
             const res = await ordersApi.create({
                 items: cart.map((i) => ({ product_id: i.id, quantity: i.qty })),
                 delivery_address: address,
-                buyer_lat: location?.lat,
-                buyer_lng: location?.lng,
+                buyer_lat: currentLat,
+                buyer_lng: currentLng,
                 route_stops: estimate?.stops,
                 route_distance_km: estimate?.total_distance_km,
                 route_time_minutes: estimate?.estimated_time_minutes,
@@ -465,24 +479,36 @@ export default function CartPage() {
                             </div>
                         </div>
                         <div style={{ marginTop: 16 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 4 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8 }}>
                                 <label style={{ fontSize: 11, fontWeight: 600, color: "var(--gray-500)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
-                                    Delivery Address
+                                    Exact Delivery Location
                                 </label>
-                                <button
-                                    onClick={requestLocation}
-                                    disabled={detecting}
-                                    style={{
-                                        fontSize: 11, fontWeight: 700, color: "var(--yellow-dark)",
-                                        background: "none", border: "none", cursor: "pointer",
-                                        padding: 0, display: "flex", alignItems: "center", gap: 3
-                                    }}>
-                                    {detecting ? "⌛ Detecting..." : "📍 Auto-detect"}
-                                </button>
+                                <div style={{ display: "flex", gap: 8 }}>
+                                    <button
+                                        onClick={refreshLocation}
+                                        disabled={detecting}
+                                        style={{
+                                            fontSize: 11, fontWeight: 700, color: "var(--yellow-dark)",
+                                            background: "none", border: "none", cursor: "pointer",
+                                            padding: 0, display: "flex", alignItems: "center", gap: 3
+                                        }}>
+                                        {detecting ? "⌛ Detecting..." : "📍 Use My Location"}
+                                    </button>
+                                </div>
                             </div>
+
+                            <div style={{ marginBottom: 12 }}>
+                                <LocationPickerMap
+                                    lat={manualCoords?.lat || location?.lat || 26.8500}
+                                    lng={manualCoords?.lng || location?.lng || 75.8200}
+                                    onChange={(lat, lng) => setManualCoords({ lat, lng })}
+                                    height="200px"
+                                />
+                            </div>
+
                             <textarea value={address} onChange={(e) => setAddress(e.target.value)}
-                                rows={2} className="input" style={{ resize: "none" }}
-                                placeholder="Enter your full delivery address..." />
+                                rows={2} className="input" style={{ resize: "none", fontSize: "13px" }}
+                                placeholder="Edit address if needed..." />
                         </div>
                         <button onClick={handleProceedToPayment} disabled={loadingOrder}
                             className="btn-primary" style={{ width: "100%", marginTop: 16, padding: "14px", fontSize: 16 }}>

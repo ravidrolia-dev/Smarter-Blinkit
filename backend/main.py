@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
 
-from routes import auth, products, search, orders, inventory, agent, analytics
+from routes import auth, products, search, orders, inventory, agent, analytics, demand
 
 def _preload_model():
     """Load the sentence-transformers model (called in background daemon thread)."""
@@ -49,6 +49,7 @@ app.include_router(orders.router, prefix="/orders", tags=["Orders"])
 app.include_router(inventory.router, prefix="/inventory", tags=["Inventory"])
 app.include_router(agent.router, prefix="/agent", tags=["Recipe Agent"])
 app.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+app.include_router(demand.router, prefix="/demand", tags=["Demand"])
 
 @app.get("/")
 async def root():

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { productsApi, inventoryApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 
 const CATEGORIES = ["Fruits", "Vegetables", "Dairy", "Bakery", "Meat", "Snacks", "Beverages", "Spices", "Personal Care", "Household", "Other"];
@@ -12,10 +12,12 @@ const UNITS = ["piece", "kg", "g", "litre", "ml", "pack", "dozen", "box"];
 export default function AddProductPage() {
     const { user } = useAuth();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [loading, setLoading] = useState(false);
     const [locationLoading, setLocationLoading] = useState(false);
     const [form, setForm] = useState({
-        name: "", description: "", price: "", mrp: "", category: "Fruits", barcode: "",
+        name: searchParams.get("name") || "",
+        description: "", price: "", mrp: "", category: "Fruits", barcode: "",
         stock: "", unit: "piece", image_url: "", tags: "",
         lat: "", lng: "", address: ""
     });

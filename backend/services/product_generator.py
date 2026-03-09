@@ -46,8 +46,9 @@ Format:
         seller_id = str(seller["_id"]) if seller else "000000000000000000000000"
         seller_name = seller.get("name", "BlinkIt Smart Market") if seller else "BlinkIt Smart Market"
 
-        product_lat = lat if lat else 28.6139
-        product_lng = lng if lng else 77.2090
+        from config import DEFAULT_LAT, DEFAULT_LNG
+        product_lat = lat if lat is not None else DEFAULT_LAT
+        product_lng = lng if lng is not None else DEFAULT_LNG
 
         products_col = get_products_collection()
         generated_products = []

@@ -91,3 +91,9 @@ export const analyticsApi = {
     recentOrders: (params?: any) => api.get("/analytics/recent-orders", { params }),
     moneyMap: () => api.get("/analytics/money-map"),
 };
+
+// ===== Demand =====
+export const demandApi = {
+    list: () => api.get("/demand/all"),
+    fulfill: (id: string) => api.post(`/demand/fulfill/${id}`),
+};

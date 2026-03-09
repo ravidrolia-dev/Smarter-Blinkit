@@ -42,7 +42,7 @@ async def verify_supplementation():
 
     print("\n--- 2. Verifying Seller Assignment Logic (with AI) ---")
     # This might fail due to quota, but we'll see the fallback in action
-    new_product_ai = await generate_mock_product("Rare Saffron", model_name="gemini-1.5-flash")
+    new_product_ai = await generate_mock_product("Rare Saffron")
     if new_product_ai:
         print(f"Product: {new_product_ai['name']} | Seller: {new_product_ai['seller_name']}")
 

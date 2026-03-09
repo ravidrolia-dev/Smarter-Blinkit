@@ -145,6 +145,17 @@ class DeliveryRouteOptimizer:
                 "optimal_route_summary": "Your Home"
             }
 
+        # Optimization #7 (Optional): 10km Radius Check
+        MAX_RADIUS_KM = 12.0 # Giving some buffer
+        for shop in shops:
+            dist_to_home = calculate_distance(self.buyer_lat, self.buyer_lng, shop["lat"], shop["lng"])
+            if dist_to_home > MAX_RADIUS_KM:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Shop '{shop['shop_name']}' is too far ({round(dist_to_home,1)} km). Delivery is only available within 12km."
+                )
+
         # Step 1: Improved Greedy Nearest Neighbor (working backwards from home)
         # We start from home and find the closest shop, then closest to that shop, etc.
         # Then reverse the list so it ends at home.

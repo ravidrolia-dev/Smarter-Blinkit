@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { productsApi, analyticsApi, authApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useLocation } from "@/hooks/useLocation";
 import Link from "next/link";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
@@ -18,6 +19,8 @@ export default function BuyerDashboard() {
     const hour = new Date().getHours();
     const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
+    const { status, location, requestLocation } = useLocation();
+
     useEffect(() => {
         setLoading(true);
         // Fetch products (Primary)
@@ -25,26 +28,6 @@ export default function BuyerDashboard() {
             .then((res) => setFeatured(res.data.slice(0, 8)))
             .catch((err) => console.error("Featured products fail:", err))
             .finally(() => setLoading(false));
-
-        // Detect Location and Fetch Sellers
-        if ("geolocation" in navigator) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    const lat = pos.coords.latitude;
-                    const lng = pos.coords.longitude;
-                    setCoords({ lat, lng });
-
-                    // Fetch sellers only after we have location
-                    authApi.listSellers({ lat, lng, radius_km: 15 })
-                        .then((res) => setSellers(res.data))
-                        .catch((err) => console.error("Sellers fail:", err));
-                },
-                (err) => {
-                    console.error("Location denied or failed:", err);
-                },
-                { enableHighAccuracy: true }
-            );
-        }
 
         // Fetch top products for chart
         analyticsApi.topProducts()
@@ -56,6 +39,16 @@ export default function BuyerDashboard() {
             .then((res) => setCategories(res.data.slice(0, 6)))
             .catch((err) => console.error("Categories fail:", err));
     }, []);
+
+    // Sync sellers when location changes
+    useEffect(() => {
+        if (location) {
+            setCoords(location);
+            authApi.listSellers({ lat: location.lat, lng: location.lng, radius_km: 15 })
+                .then((res) => setSellers(res.data))
+                .catch((err) => console.error("Sellers fail:", err));
+        }
+    }, [location]);
 
     const quickCategories = [
         { icon: "📱", name: "Smartphones" },

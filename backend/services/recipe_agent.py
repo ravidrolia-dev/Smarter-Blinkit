@@ -5,9 +5,10 @@ import math
 import logging
 import re
 from dotenv import load_dotenv
-from database import get_products_collection
+from database import get_products_collection, get_product_demand_collection, get_recipe_cache_collection
 from services.ai.gemini_service import gemini_service
 from services.ai.rate_limit_manager import manager
+from datetime import datetime
 
 load_dotenv()
 
@@ -23,220 +24,223 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-async def parse_recipe_ingredients(meal_request: str, model_name: str = None) -> dict:
+async def parse_recipe_ingredients(meal_request: str) -> dict:
     """
-    Use upgraded GeminiService to extract ingredients.
-    V4 UPDATE: Batch Parsing - Can handle multiple requests or heavy single request.
-    Returns a dict with 'ingredients' and 'status'.
+    Use Gemini to extract structured recipe data.
     """
+    # 1. Check Cache
+    cache_col = get_recipe_cache_collection()
+    cached = await cache_col.find_one({"meal_query": meal_request.lower().strip()})
+    if cached:
+        logger.info(f"Recipe cache hit: {meal_request}")
+        return cached["data"]
+
     system_instruction = (
-        "You are a smart grocery assistant. Extract ingredients and approximate quantities needed. "
-        "Return ONLY a JSON object with two keys: "
-        "'ingredients': list of {ingredient, quantity} objects (max 20), "
-        "'warning': null or a string if you had to truncate. "
-        "CRITICAL: Keep ingredient names clean (no parentheses, no notes like 'optional'). "
-        "Example: {'ingredients': [{'ingredient': 'Mozzarella', 'quantity': '200g'}], 'warning': null}"
+        "You are a master chef and grocery assistant. "
+        "Your goal is to extract ONLY raw grocery ingredient names from the dish. "
+        "Rules: "
+        "- Return ONLY base ingredient names (e.g., 'tomato', 'onion', 'garlic'). "
+        "- Remove quantities, measurements, and units (no '1kg', no '2 cloves', no 'tsp'). "
+        "- Remove preparation words (no 'chopped', no 'boiled', no 'fresh'). "
+        "- Return ingredients exactly as they appear in a grocery store as a singular product. "
+        "Return ONLY a JSON object with: "
+        "'recipe_name': string, "
+        "'ingredients': list of strings (raw product names), "
+        "'instructions': list of strings. "
+        "Example: {'recipe_name': 'Pasta', 'ingredients': ['penne pasta', 'tomato', 'basil', 'olive oil'], 'instructions': ['Boil water']}"
     )
     
-    prompt = f"User wants to cook: '{meal_request}'. Return realistic ingredients needed to buy."
+    prompt = f"How to cook: '{meal_request}'? Provide a simple recipe with ingredients list."
+    logger.info(f"Recipe request received: {meal_request}")
 
     try:
         response_text = await gemini_service.generate_content(prompt, system_instruction=system_instruction)
         if not response_text:
-            return {"ingredients": [], "warning": "AI service temporarily unavailable due to quota limits.", "status": "failed"}
+            return None
 
-        # Robust JSON extraction
         clean_json = gemini_service.extract_json(response_text)
-        if not clean_json:
-            logger.error(f"Failed to extract JSON from AI response: {response_text[:100]}...")
-            return {"ingredients": [], "warning": "AI returned unusable data format.", "status": "error"}
+        if not clean_json: return None
         
         data = json.loads(clean_json)
-        return {
-            "ingredients": data.get("ingredients", []),
-            "warning": data.get("warning"),
-            "status": "success"
-        }
+        
+        # Save to Cache
+        await cache_col.update_one(
+            {"meal_query": meal_request.lower().strip()},
+            {"$set": {"data": data, "created_at": datetime.utcnow()}},
+            upsert=True
+        )
+        
+        return data
     except Exception as e:
         logger.error(f"Recipe parsing failed: {e}")
-        return {"ingredients": [], "warning": "Failed to parse recipe details.", "status": "error"}
+        return None
 
 
-async def find_ingredients_from_db(ingredients: list, buyer_lat: float = None, buyer_lng: float = None) -> dict:
+def normalize_ingredient(text: str) -> str:
     """
-    Search DB for ingredients. 
-    V4 UPDATE: Proactive Quota Check and Partial Result Safety.
-    Returns {results: [...], meta: {partial: bool, message: str}}
+    Cleans up ingredient strings into raw grocery product names.
+    - Lowercase
+    - Remove prep words (chopped, sliced, etc.)
+    - Remove common units (tbsp, tsp, cup, etc.)
+    - Convert plural to singular
+    """
+    if not text: return ""
+    
+    # 1. Lowercase and basic cleanup
+    text = text.lower().strip()
+    
+    # 2. Remove common units and preparation styles (including those with numbers)
+    # Examples: 500g, 1kg, 2cups, 1tbsp, 1 tablespoon
+    unit_pattern = r'\d+\s*(?:g|kg|ml|l|oz|lb|cups|cup|tbsp|tsp|tablespoon|teaspoon|tablespoons|teaspoons|cloves|pieces|piece|grams|gram)\b'
+    text = re.sub(unit_pattern, '', text)
+    
+    # Also remove unit words without numbers just in case
+    standalone_units = ["tablespoon", "teaspoon", "cup", "grams", "gram", "cloves", "clove", "pieces", "piece", "packet", "pack", "kg", "grams"]
+    for u in standalone_units:
+        text = re.sub(rf'\b{u}\b', '', text)
+    # words that don't belong in a product name
+    remove_words = [
+        "chopped", "sliced", "finely", "fresh", "boiled", "mashed", "crushed", 
+        "ground", "powdered", "pieces", "diced", "peeled", "minced", "shredded",
+        "and", "with", "or", "of", "about", "approx", "approximately", "optional",
+        "needed", "to", "taste", "as", "per", "requirement"
+    ]
+    
+    # regex to remove words as standalone words
+    for word in remove_words:
+        text = re.sub(rf'\b{word}\b', '', text)
+        
+    # 3. Strip remaining numbers and special chars (like commas, dots)
+    text = re.sub(r'[\d\.,/]+', '', text)
+    
+    # 4. Clean extra spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # 5. Plural to Singular (basic rule-based)
+    singular_map = {
+        "tomatoes": "tomato",
+        "potatoes": "potato",
+        "onions": "onion",
+        "eggs": "egg",
+        "carrots": "carrot",
+        "lemons": "lemon",
+        "chillies": "chilli",
+        "chilies": "chili",
+        "peppers": "pepper",
+        "mushrooms": "mushroom",
+        "cloves": "clove",
+        "leaves": "leaf"
+    }
+    
+    # Check whole word mapping first
+    if text in singular_map:
+        return singular_map[text]
+        
+    # Handle composite names like "coriander leaves"
+    for plural, singular in singular_map.items():
+        text = re.sub(rf'\b{plural}\b', singular, text)
+            
+    if text.endswith("s") and len(text) > 3:
+        # Simple suffix check for other common plurals
+        if not text.endswith("ss") and not any(text.endswith(x) for x in ["sh", "ch"]): 
+            # Very basic check, but safer than unconditional truncation
+            text = text[:-1]
+            
+    return text.strip()
+
+
+async def find_ingredients_from_db(ingredients: list, user_id: str = None, lat: float = None, lng: float = None) -> list:
+    """
+    Search DB for ingredients and record demand if missing.
     """
     products_col = get_products_collection()
+    demand_col = get_product_demand_collection()
     results = []
-    is_partial = False
-    message = ""
 
-    for i, item in enumerate(ingredients):
-        ingredient_name = item.get("ingredient", "")
-        quantity = item.get("quantity", "1 unit")
+    for item in ingredients:
+        # item can now be a string from Gemini if we updated the prompt correctly, or old dict
+        raw_name = item.get("ingredient", str(item)) if isinstance(item, dict) else str(item)
+        ingredient_name = normalize_ingredient(raw_name)
         
-        # Sanitize for regex
+        if not ingredient_name: continue
+        
         safe_name = re.escape(ingredient_name)
 
-        # 1. Search DB first (Always safe)
+        # 1. Search DB
         cursor = products_col.find({
             "$or": [
-                {"name": {"$regex": f"^{safe_name}$", "$options": "i"}}, # Exact first
+                {"name": {"$regex": f"^{safe_name}$", "$options": "i"}},
                 {"name": {"$regex": safe_name, "$options": "i"}},
-                {"tags": {"$regex": safe_name, "$options": "i"}},
-                {"category": {"$regex": safe_name, "$options": "i"}}
+                {"tags": {"$regex": safe_name, "$options": "i"}}
             ],
             "stock": {"$gt": 0}
-        }).limit(3)
+        }).limit(5)
 
-        found = await cursor.to_list(length=3)
+        found = await cursor.to_list(length=5)
+        
         best = None
         best_dist = float("inf")
 
         for product in found:
-            dist = None
-            if buyer_lat and buyer_lng and product.get("location"):
+            dist = 999
+            if lat and lng and product.get("location"):
                 coords = product["location"].get("coordinates", [0, 0])
-                dist = haversine_km(buyer_lat, buyer_lng, coords[1], coords[0])
-                if dist < best_dist:
-                    best_dist = dist
-                    best = product
+                dist = haversine_km(lat, lng, coords[1], coords[0])
+                
+            if dist < best_dist:
+                best_dist = dist
+                best = product
+
+        # 2. Record Demand if not found
+        if not best:
+            logger.info(f"Ingredient missing: {ingredient_name}. Recording demand.")
+            
+            # Aggregate: Find existing demand within 5km for this product
+            existing_demand = None
+            if lat and lng:
+                existing_demand = await demand_col.find_one({
+                    "product_name": ingredient_name.lower().strip(),
+                    "status": "pending",
+                    "location": {
+                        "$nearSphere": {
+                            "$geometry": {"type": "Point", "coordinates": [lng, lat]},
+                            "$maxDistance": 5000 # 5km aggregation radius
+                        }
+                    }
+                })
+
+            if existing_demand:
+                # Update existing
+                await demand_col.update_one(
+                    {"_id": existing_demand["_id"]},
+                    {
+                        "$inc": {"request_count": 1},
+                        "$set": {"last_requested": datetime.utcnow()},
+                        "$addToSet": {"requested_by": user_id} if user_id else {"$each": []}
+                    }
+                )
             else:
-                if best is None:
-                    best = product
-
-        # 2. Mock Generation with Proactive Quota Check
-        if best is None:
-            # V4 Logic: If we are low on quota (proactive check), we stop generating new products
-            # to ensure the UI remains fast and the user sees what IS available.
-            
-            logger.info(f"Ingredient '{ingredient_name}' missing, checking quota for generation...")
-            
-            # Check if ANY key has ANY model with available RPD
-            can_generate = False
-            from services.ai.gemini_service import API_KEYS, MODEL_PRIORITY
-            for key in API_KEYS:
-                for model in MODEL_PRIORITY:
-                    if manager.can_use(key, model):
-                        can_generate = True
-                        break
-                if can_generate: break
-
-            if can_generate:
-                best = await generate_mock_product(ingredient_name, buyer_lat, buyer_lng)
-            
-            if best is None:
-                is_partial = True
-                message = "Showing partial results due to AI usage limits."
-                logger.warning(f"Skipping auto-generation for '{ingredient_name}' - Quota limit.")
+                # Create new
+                await demand_col.insert_one({
+                    "product_name": ingredient_name.lower().strip(),
+                    "status": "pending",
+                    "request_count": 1,
+                    "last_requested": datetime.utcnow(),
+                    "requested_by": [user_id] if user_id else [],
+                    "location": {"type": "Point", "coordinates": [lng or 0, lat or 0]}
+                })
 
         results.append({
             "ingredient": ingredient_name,
-            "needed_quantity": quantity,
+            "quantity": "" if raw_name == ingredient_name else raw_name,
+            "found": best is not None,
             "product": {
-                "id": str(best.get("id", best.get("_id"))) if best else "",
+                "id": str(best["_id"]),
                 "name": best["name"],
                 "price": best["price"],
-                "stock": best["stock"],
-                "seller_id": str(best["seller_id"]),
-                "distance_km": round(best.get("distance_km", 0), 2) if best and "distance_km" in best else (round(best_dist, 2) if best_dist != float("inf") else None)
-            } if best else None,
-            "found": best is not None
+                "seller_name": best.get("seller_name", "Shop"),
+                "distance_km": round(best_dist, 2) if best_dist != float("inf") else None
+            } if best else None
         })
 
-    return {
-        "results": results,
-        "meta": {
-            "partial": is_partial,
-            "message": message
-        }
-    }
-
-
-async def generate_mock_product(query: str, lat: float = None, lng: float = None) -> dict:
-    """Generate a realistic mock product using GeminiService with safety checks."""
-    
-    # 1. Safety Filter (sentences/verbs)
-    if len(query.split()) > 5 or len(query) > 50 or any(verb in query.lower() for verb in ["make", "cook", "prepare", "find"]):
-        return None
-
-    prompt = f"Create ONE realistic grocery product for search term: '{query}'. Return ONLY JSON format: {{\"name\": \"...\", \"description\": \"...\", \"price\": 2.99, \"category\": \"...\", \"unit\": \"...\", \"tags\": [...]}}"
-    
-    try:
-        response_text = await gemini_service.generate_content(prompt)
-        if not response_text:
-            return None # Fail silently or use rule-based fallback below
-
-        text = response_text.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-
-        data = json.loads(text.strip())
-    except:
-        # Final Rule-Based Fallback if AI fails completely
-        q_lower = query.lower()
-        category = "Groceries"
-        if any(w in q_lower for w in ["chicken", "meat", "beef"]): category = "Meat"
-        elif any(w in q_lower for w in ["onion", "potato", "carrot"]): category = "Vegetables"
-        elif any(w in q_lower for w in ["apple", "fruit", "mango"]): category = "Fruits"
-        elif any(w in q_lower for w in ["milk", "cheese", "dairy"]): category = "Dairy"
-
-        data = {
-            "name": query.title(),
-            "description": f"Fresh and high-quality {query} sourced from local vendors.",
-            "price": random.choice([29, 49, 99, 149]),
-            "category": category,
-            "unit": "1 unit",
-            "tags": [query.lower(), category.lower(), "fresh"]
-        }
-
-    # Common Document Creation
-    try:
-        from database import get_users_collection, get_products_collection
-        from services.semantic_search import embed_text
-        from datetime import datetime
-        from bson import ObjectId
-
-        users_col = get_users_collection()
-        products_col = get_products_collection()
-
-        # Selection of a relevant seller (Jaipur based)
-        seller = await users_col.find_one({"role": "seller"})
-        seller_id = str(seller["_id"]) if seller else "000000000000000000000000"
-        seller_name = seller.get("name", "Local Shop") if seller else "Local Shop"
-
-        product_lat = lat if lat else 26.8500
-        product_lng = lng if lng else 75.8200
-
-        doc = {
-            "name": data.get("name", query.title()),
-            "description": data.get("description", "Auto-generated product"),
-            "price": float(data.get("price", 2.99)),
-            "category": data.get("category", "General"),
-            "barcode": f"GEN-{random.randint(100000, 999999)}",
-            "stock": 50,
-            "unit": data.get("unit", "1 pc"),
-            "image_url": f"https://placehold.co/400x400?text={query.replace(' ', '+')}",
-            "tags": data.get("tags", [query]),
-            "seller_id": seller_id,
-            "seller_name": seller_name,
-            "location": {"type": "Point", "coordinates": [product_lng, product_lat]},
-            "embedding": embed_text(f"{data.get('name')} {data.get('description')}"),
-            "rating": 4.5,
-            "total_sold": 0,
-            "is_ai_generated": True,
-            "created_at": datetime.utcnow()
-        }
-
-        res = await products_col.insert_one(doc)
-        doc["id"] = str(res.inserted_id)
-        doc.pop("_id", None)
-        doc.pop("embedding", None)
-        return doc
-    except Exception as e:
-        logger.error(f"Critical error in mock product creation: {e}")
-        return None
+    return results

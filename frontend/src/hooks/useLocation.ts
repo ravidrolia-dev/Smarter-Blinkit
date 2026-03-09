@@ -8,6 +8,8 @@ export interface LocationState {
     location: { lat: number; lng: number } | null;
     errorMessage: string | null;
     requestLocation: () => void;
+    refreshLocation: () => void;
+    setManualLocation: (lat: number, lng: number) => void;
 }
 
 const SESSION_KEY = "sb_user_location";
@@ -34,7 +36,14 @@ export function useLocation(): LocationState {
         }
     }, []);
 
-    const requestLocation = useCallback(() => {
+    const setManualLocation = useCallback((lat: number, lng: number) => {
+        const loc = { lat, lng };
+        setLocation(loc);
+        setStatus("granted");
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(loc));
+    }, []);
+
+    const requestLocation = useCallback((force: boolean = false) => {
         if (typeof window === "undefined" || !navigator.geolocation) {
             setStatus("unavailable");
             setErrorMessage("Geolocation is not supported by your browser.");
@@ -44,40 +53,43 @@ export function useLocation(): LocationState {
         setStatus("requesting");
         setErrorMessage(null);
 
+        if (force) sessionStorage.removeItem(SESSION_KEY);
+
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
                 setLocation(loc);
                 setStatus("granted");
-                // Cache for this session so we don't re-prompt on every page navigation
                 sessionStorage.setItem(SESSION_KEY, JSON.stringify(loc));
             },
             (err) => {
                 switch (err.code) {
                     case err.PERMISSION_DENIED:
                         setStatus("denied");
-                        setErrorMessage("Location permission denied. Enable it in browser settings to see nearby stores.");
+                        setErrorMessage("Location permission denied.");
                         break;
                     case err.POSITION_UNAVAILABLE:
                         setStatus("unavailable");
-                        setErrorMessage("Location unavailable. Please try again or enter your location manually.");
+                        setErrorMessage("Position unavailable.");
                         break;
                     case err.TIMEOUT:
                         setStatus("unavailable");
-                        setErrorMessage("Location request timed out. Please try again.");
+                        setErrorMessage("Request timed out.");
                         break;
                     default:
                         setStatus("unavailable");
-                        setErrorMessage("An unknown error occurred while fetching location.");
+                        setErrorMessage("Unknown error.");
                 }
             },
             {
-                enableHighAccuracy: false,
-                timeout: 8000,
-                maximumAge: 5 * 60 * 1000, // 5 minutes
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: force ? 0 : 30000,
             }
         );
     }, []);
 
-    return { status, location, errorMessage, requestLocation };
+    const refreshLocation = useCallback(() => requestLocation(true), [requestLocation]);
+
+    return { status, location, errorMessage, requestLocation: () => requestLocation(false), refreshLocation, setManualLocation };
 }
