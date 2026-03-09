@@ -97,3 +97,16 @@ export const demandApi = {
     list: () => api.get("/demand/all"),
     fulfill: (id: string) => api.post(`/demand/fulfill/${id}`),
 };
+
+// ===== User / Profile =====
+export const userApi = {
+    getProfile: () => api.get("/user/profile"),
+    updateProfile: (data: any) => api.put("/user/profile", data),
+    updatePassword: (data: any) => api.put("/user/password", data),
+    getAddresses: () => api.get("/user/addresses"),
+    addAddress: (data: any) => api.post("/user/address", data),
+    updateAddress: (id: string, data: any) => api.put(`/user/address/${id}`, data),
+    deleteAddress: (id: string) => api.delete(`/user/address/${id}`),
+    getPublicProfile: (id: string) => api.get(`/user/public/${id}`),
+    deleteAccount: () => api.delete("/user/me"),
+};

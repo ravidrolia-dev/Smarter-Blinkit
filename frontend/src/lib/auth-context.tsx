@@ -8,6 +8,7 @@ interface User {
     name: string;
     role: "buyer" | "seller";
     phone?: string;
+    profile_image?: string;
 }
 
 interface AuthContextType {
@@ -15,6 +16,7 @@ interface AuthContextType {
     token: string | null;
     login: (token: string, user: User) => void;
     logout: () => void;
+    refreshUser: () => Promise<void>;
     isLoading: boolean;
 }
 
@@ -36,6 +38,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
     }, []);
 
+    const refreshUser = async () => {
+        const storedToken = localStorage.getItem("sb_token");
+        if (!storedToken) return;
+
+        try {
+            const { userApi } = await import("./api");
+            const res = await userApi.getProfile();
+            if (res.data) {
+                const updatedUser = res.data;
+                localStorage.setItem("sb_user", JSON.stringify(updatedUser));
+                setUser(updatedUser);
+            }
+        } catch (err) {
+            console.error("Failed to refresh user:", err);
+        }
+    };
+
     const login = (token: string, user: User) => {
         localStorage.setItem("sb_token", token);
         localStorage.setItem("sb_user", JSON.stringify(user));
@@ -53,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, token, login, logout, isLoading }}>
+        <AuthContext.Provider value={{ user, token, login, logout, refreshUser, isLoading }}>
             {children}
         </AuthContext.Provider>
     );
@@ -61,7 +80,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth(): AuthContextType {
     const ctx = useContext(AuthContext);
-    // Return a safe no-op context when rendered outside AuthProvider (e.g. during SSR prerender)
-    if (!ctx) return { user: null, token: null, login: () => { }, logout: () => { }, isLoading: true };
+    if (!ctx) return {
+        user: null,
+        token: null,
+        login: () => { },
+        logout: () => { },
+        refreshUser: async () => { },
+        isLoading: true
+    };
     return ctx;
 }

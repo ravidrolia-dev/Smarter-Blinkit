@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { ordersApi } from "@/lib/api";
+import { ordersApi, userApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useLocation } from "@/hooks/useLocation";
 import { useRouter } from "next/navigation";
@@ -224,6 +224,7 @@ export default function CartPage() {
     const [loadingEstimate, setLoadingEstimate] = useState(false);
     const [detecting, setDetecting] = useState(false);
     const [manualCoords, setManualCoords] = useState<{ lat: number, lng: number } | null>(null);
+    const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
     const { status, location, requestLocation, refreshLocation } = useLocation();
     const { user } = useAuth();
     const router = useRouter();
@@ -231,7 +232,24 @@ export default function CartPage() {
     useEffect(() => {
         const stored = JSON.parse(localStorage.getItem("sb_cart") || "[]");
         setCart(stored);
+        fetchSavedAddresses();
     }, []);
+
+    const fetchSavedAddresses = async () => {
+        try {
+            const res = await userApi.getAddresses();
+            setSavedAddresses(res.data);
+
+            // Auto-select default address if available and no location detected yet
+            const def = res.data.find((a: any) => a.is_default);
+            if (def && !manualCoords) {
+                setAddress(def.full_address);
+                setManualCoords({ lat: def.lat, lng: def.lng });
+            }
+        } catch (err) {
+            console.error("Failed to fetch saved addresses");
+        }
+    };
 
     useEffect(() => {
         setTotal(cart.reduce((s, i) => s + i.price * i.qty, 0));
@@ -478,6 +496,50 @@ export default function CartPage() {
                                 <span>Total</span><span>₹{total.toFixed(2)}</span>
                             </div>
                         </div>
+
+                        {/* Saved Addresses Quick Selection */}
+                        {savedAddresses.length > 0 && (
+                            <div style={{ marginTop: 24, marginBottom: 8 }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-500)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>
+                                    Select Saved Address
+                                </p>
+                                <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8, scrollbarWidth: "none" }} className="custom-scrollbar">
+                                    {savedAddresses.map((addr) => (
+                                        <button
+                                            key={addr.id}
+                                            onClick={() => {
+                                                setAddress(addr.full_address);
+                                                setManualCoords({ lat: addr.lat, lng: addr.lng });
+                                                toast.success(`Location set to ${addr.label}`);
+                                            }}
+                                            style={{
+                                                flexShrink: 0,
+                                                padding: "10px 14px",
+                                                borderRadius: 14,
+                                                border: "1.5px solid",
+                                                borderColor: address === addr.full_address ? "var(--yellow-primary)" : "var(--gray-100)",
+                                                background: address === addr.full_address ? "var(--yellow-subtle)" : "white",
+                                                transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                alignItems: "flex-start",
+                                                gap: 2,
+                                                cursor: "pointer",
+                                                boxShadow: address === addr.full_address ? "0 4px 12px rgba(255,208,0,0.15)" : "none"
+                                            }}
+                                        >
+                                            <span style={{ fontSize: 12, fontWeight: 900, color: address === addr.full_address ? "var(--yellow-dark)" : "var(--gray-900)" }}>
+                                                {addr.label === "Home" ? "🏠" : addr.label === "Office" ? "🏢" : "📍"} {addr.label}
+                                            </span>
+                                            <span style={{ fontSize: 10, color: "var(--gray-400)", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                {addr.full_address}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         <div style={{ marginTop: 16 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8 }}>
                                 <label style={{ fontSize: 11, fontWeight: 600, color: "var(--gray-500)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>

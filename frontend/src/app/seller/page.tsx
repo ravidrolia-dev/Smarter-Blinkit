@@ -69,12 +69,25 @@ export default function SellerDashboard() {
 
     return (
         <DashboardLayout role="seller">
-            <div className="flex items-center justify-between mb-6">
-                <div>
-                    <h1 className="text-2xl font-black">📊 Seller Dashboard</h1>
-                    <p className="text-sm text-gray-500">Welcome back, {user?.name?.split(" ")[0]}!</p>
+            <div className="flex items-center justify-between mb-8 pb-6 border-b border-gray-100">
+                <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-2xl bg-yellow-400 p-0.5 shadow-lg shadow-yellow-200">
+                        <div className="w-full h-full rounded-[14px] bg-white overflow-hidden flex items-center justify-center text-2xl font-black text-yellow-600 border-2 border-white">
+                            {user?.profile_image ? (
+                                <img src={user.profile_image} alt={user.name} className="w-full h-full object-cover" />
+                            ) : (
+                                user?.name?.charAt(0).toUpperCase()
+                            )}
+                        </div>
+                    </div>
+                    <div>
+                        <h1 className="text-3xl font-black text-gray-900 leading-tight">📊 Seller Dashboard</h1>
+                        <p className="text-sm font-medium text-gray-500">Welcome back, <span className="text-gray-900 font-bold">{user?.name?.split(" ")[0]}</span>! Ready for today's orders?</p>
+                    </div>
                 </div>
-                <Link href="/seller/products/new" className="btn-primary">+ Add Product</Link>
+                <Link href="/seller/products/new" className="btn-primary py-3 px-6 shadow-xl shadow-yellow-200 hover:scale-105 active:scale-95 transition-all">
+                    + Add New Product
+                </Link>
             </div>
 
             {/* Stats */}

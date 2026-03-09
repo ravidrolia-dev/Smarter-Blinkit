@@ -198,10 +198,6 @@ export default function DashboardLayout({ children, role }: { children: React.Re
                             <span className="badge badge-yellow ml-1">{user.role}</span>
                         </div>
                     )}
-                    {role === "buyer"
-                        ? <Link href="/seller" className="btn-ghost text-xs hidden md:flex">Switch to Seller</Link>
-                        : <Link href="/buyer" className="btn-ghost text-xs hidden md:flex">Switch to Buyer</Link>
-                    }
                     <button onClick={() => { logout(); toast.success("Logged out!"); }}
                         className="btn-ghost text-red-500 hover:bg-red-50"
                         suppressHydrationWarning={true}>
@@ -229,11 +225,28 @@ export default function DashboardLayout({ children, role }: { children: React.Re
                     ))}
                 </nav>
 
+                {/* Account Settings Link */}
+                <div className="mx-3 mt-auto pt-4 border-t border-gray-100">
+                    <Link href="/account/settings"
+                        className={`sidebar-item mb-1 ${isActive("/account/settings") ? "active" : ""}`}>
+                        ⚙ Account Settings
+                    </Link>
+                </div>
+
                 {/* Bottom user card */}
                 {mounted && !isLoading && user && (
-                    <div className="mx-3 mt-4 p-3 rounded-xl bg-yellow-50 border border-yellow-100">
-                        <p className="text-xs font-bold text-gray-900">{user.name}</p>
-                        <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                    <div className="mx-3 mb-4 p-3 rounded-xl bg-yellow-50 border border-yellow-100 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-yellow-200 border-2 border-white flex-shrink-0 overflow-hidden flex items-center justify-center text-yellow-700 font-black">
+                            {user.profile_image ? (
+                                <img src={user.profile_image} alt={user.name} className="w-full h-full object-cover" />
+                            ) : (
+                                user.name.charAt(0).toUpperCase()
+                            )}
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-xs font-bold text-gray-900 truncate">{user.name}</p>
+                            <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                        </div>
                     </div>
                 )}
             </aside>

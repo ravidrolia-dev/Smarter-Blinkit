@@ -2,42 +2,64 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
-import { productsApi } from "@/lib/api";
+import { productsApi, userApi } from "@/lib/api";
 import Link from "next/link";
 import toast from "react-hot-toast";
 
 export default function SellerShopPage() {
     const { sellerId } = useParams();
     const [products, setProducts] = useState<any[]>([]);
+    const [seller, setSeller] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [sellerName, setSellerName] = useState("Shop");
 
     useEffect(() => {
         if (!sellerId) return;
         setLoading(true);
-        productsApi.list({ seller_id: sellerId, limit: 100 })
-            .then((res) => {
-                setProducts(res.data);
-                if (res.data.length > 0) {
-                    setSellerName(res.data[0].seller_name || "Local Shop");
-                }
-            })
-            .catch((err) => {
+
+        const fetchData = async () => {
+            try {
+                const [productsRes, sellerRes] = await Promise.all([
+                    productsApi.list({ seller_id: sellerId as string, limit: 100 }),
+                    userApi.getPublicProfile(sellerId as string)
+                ]);
+                setProducts(productsRes.data);
+                setSeller(sellerRes.data);
+            } catch (err) {
                 console.error("Shop fetch failed:", err);
-                toast.error("Could not load shop products");
-            })
-            .finally(() => setLoading(false));
+                // Fallback for seller name if public profile fails
+                if (products.length > 0) setSeller({ name: products[0].seller_name });
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
     }, [sellerId]);
+
+    const sellerName = seller?.name || "Local Shop";
 
     return (
         <DashboardLayout role="buyer">
-            <div className="mb-8 flex items-center gap-4">
-                <Link href="/buyer" className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center hover:bg-yellow-50 transition-colors">
-                    ⬅️
-                </Link>
-                <div>
-                    <h1 className="text-3xl font-black text-gray-900">{sellerName}</h1>
-                    <p className="text-gray-500">Browsing all products from this seller</p>
+            <div className="mb-10 flex items-center justify-between">
+                <div className="flex items-center gap-6">
+                    <Link href="/buyer" className="w-12 h-12 rounded-2xl bg-white shadow-md flex items-center justify-center hover:bg-yellow-50 hover:scale-105 transition-all text-xl">
+                        ⬅️
+                    </Link>
+                    <div className="flex items-center gap-4">
+                        <div className="w-20 h-20 rounded-3xl bg-yellow-400 p-1 shadow-xl shadow-yellow-100">
+                            <div className="w-full h-full rounded-[20px] bg-white overflow-hidden flex items-center justify-center text-3xl font-black text-yellow-600 border-2 border-white">
+                                {seller?.profile_image ? (
+                                    <img src={seller.profile_image} alt={sellerName} className="w-full h-full object-cover" />
+                                ) : (
+                                    sellerName.charAt(0).toUpperCase()
+                                )}
+                            </div>
+                        </div>
+                        <div>
+                            <h1 className="text-4xl font-black text-gray-900 leading-tight">{sellerName}</h1>
+                            <p className="text-sm font-medium text-gray-400">Trusted Local Seller • {products.length} Products</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 

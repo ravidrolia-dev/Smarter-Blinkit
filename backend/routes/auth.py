@@ -31,6 +31,7 @@ def format_user(user):
         "name": user["name"],
         "role": user["role"],
         "phone": user.get("phone"),
+        "profile_image": user.get("profile_image"),
         "created_at": user.get("created_at"),
         "address": user.get("address")
     }
@@ -84,6 +85,7 @@ async def register(req: RegisterRequest):
         "phone": req.phone,
         "hashed_password": get_password_hash(req.password),
         "face_encoding": face_encoding,
+        "profile_image": None,
         "is_active": True,
     }
 
