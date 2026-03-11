@@ -47,6 +47,9 @@ def get_recipe_cache_collection():
 def get_product_reviews_collection():
     return async_db.product_reviews
 
+def get_product_pairings_collection():
+    return async_db.product_pairings
+
 async def create_indexes():
     """Create all required indexes."""
     users = get_users_collection()

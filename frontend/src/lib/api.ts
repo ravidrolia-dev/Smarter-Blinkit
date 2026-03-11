@@ -102,6 +102,11 @@ export const analyticsApi = {
     getBestsellers: (limit: number = 10) => api.get("/analytics/bestsellers", { params: { limit } }),
     getSellerReviews: (seller_id: string, limit: number = 20) =>
         api.get("/analytics/seller-reviews", { params: { seller_id, limit } }),
+    productPairings: (id: string, limit: number = 4) =>
+        api.get(`/analytics/products/${id}/pairings`, { params: { limit } }),
+    cartPairings: (ids: string, limit: number = 6) =>
+        api.get("/analytics/cart/pairings", { params: { ids, limit } }),
+    trainPairings: () => api.post("/analytics/train-pairings"),
 };
 
 // ===== Demand =====

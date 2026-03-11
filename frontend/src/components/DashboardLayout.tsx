@@ -26,6 +26,7 @@ const sellerNav = [
     { href: "/seller", label: "📊 Dashboard", exact: true },
     { href: "/seller/demand", label: "📢 Demand Requests" },
     { href: "/seller/money-map", label: "💰 Money Map" },
+    { href: "/seller/insights", label: "💡 Market Insights" },
     { href: "/seller/top-picks", label: "🏆 Top Picks" },
     { href: "/seller/inventory", label: "📦 Inventory" },
     { href: "/seller/barcode", label: "📷 Barcode Scanner" },

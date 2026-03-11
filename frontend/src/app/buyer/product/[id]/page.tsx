@@ -7,6 +7,7 @@ import { useLocation } from "@/hooks/useLocation";
 import toast from "react-hot-toast";
 import Link from "next/link";
 import { Star } from "lucide-react";
+import FrequentlyBoughtTogether from "@/components/FrequentlyBoughtTogether";
 
 export default function ProductDetailsPage() {
     const { id } = useParams();
@@ -282,20 +283,8 @@ export default function ProductDetailsPage() {
                         </div>
                     )}
 
-                    {/* Frequently Bought Together */}
-                    {recs.bought_with?.length > 0 && (
-                        <div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-                                <h2 style={{ fontSize: 22, fontWeight: 800 }}>🛒 Frequently Bought Together</h2>
-                                {recs.source === "neo4j_graph" && <span className="badge badge-yellow">Graph DB</span>}
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 20 }}>
-                                {recs.bought_with?.map((p: any) => (
-                                    <ProductCard key={p.id} product={p} onAdd={addToCart} />
-                                ))}
-                            </div>
-                        </div>
-                    )}
+                    {/* Smart Product Pairing (Apriori) */}
+                    <FrequentlyBoughtTogether productId={id as string} />
                 </div>
             )}
         </DashboardLayout>

@@ -7,6 +7,7 @@ import { useLocation } from "@/hooks/useLocation";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import dynamic from "next/dynamic";
+import FrequentlyBoughtTogether from "@/components/FrequentlyBoughtTogether";
 
 const DeliveryRouteMap = dynamic(() => import("@/components/DeliveryRouteMap"), {
     ssr: false,
@@ -230,9 +231,15 @@ export default function CartPage() {
     const router = useRouter();
 
     useEffect(() => {
-        const stored = JSON.parse(localStorage.getItem("sb_cart") || "[]");
-        setCart(stored);
+        const load = () => {
+            const stored = JSON.parse(localStorage.getItem("sb_cart") || "[]");
+            setCart(stored);
+        };
+        load();
         fetchSavedAddresses();
+
+        window.addEventListener('cartUpdated', load);
+        return () => window.removeEventListener('cartUpdated', load);
     }, []);
 
     const fetchSavedAddresses = async () => {
@@ -572,6 +579,16 @@ export default function CartPage() {
                                 rows={2} className="input" style={{ resize: "none", fontSize: "13px" }}
                                 placeholder="Edit address if needed..." />
                         </div>
+
+                        {/* People often add (Last minute upsell) */}
+                        <div style={{ marginTop: 20 }}>
+                            <FrequentlyBoughtTogether
+                                cartIds={cart.map(i => i.id)}
+                                title="People often add"
+                                subtitle="Items commonly bought together"
+                                maxItems={2}
+                            />
+                        </div>
                         <button onClick={handleProceedToPayment} disabled={loadingOrder}
                             className="btn-primary" style={{ width: "100%", marginTop: 16, padding: "14px", fontSize: 16 }}>
                             {loadingOrder ? "Creating order…" : `Pay ₹${total.toFixed(2)} →`}
@@ -591,6 +608,13 @@ export default function CartPage() {
                     )}
                 </div>
             </div>
+
+            {/* Smart Product Pairing (Cart-based) */}
+            <FrequentlyBoughtTogether
+                cartIds={cart.map(i => i.id)}
+                title="Customers also buy"
+                subtitle="Items frequently purchased with your cart contents"
+            />
         </DashboardLayout>
     );
 }

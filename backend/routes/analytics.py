@@ -282,3 +282,21 @@ async def get_seller_reviews(seller_id: str, limit: int = 20):
         r["product_image"] = product_map.get(pid, {}).get("image_url")
         
     return reviews
+
+from services.product_pairing_service import get_pairings_for_product, get_pairings_for_cart, train_product_pairings
+
+@router.get("/products/{product_id}/pairings")
+async def product_pairings(product_id: str, limit: int = 4):
+    """Get frequently bought together products for a specific item."""
+    return await get_pairings_for_product(product_id, limit)
+
+@router.get("/cart/pairings")
+async def cart_pairings(ids: str, limit: int = 6):
+    """Get recommendations based on current cart (comma separated IDs)."""
+    product_ids = [pid.strip() for pid in ids.split(",") if pid.strip()]
+    return await get_pairings_for_cart(product_ids, limit)
+
+@router.post("/train-pairings")
+async def trigger_training(support: float = 0.01, confidence: float = 0.5):
+    """Manually trigger the Apriori training process."""
+    return await train_product_pairings(min_support=support, min_threshold=confidence)
