@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime
 import traceback
 from pydantic import BaseModel
 from typing import List, Optional, Dict
@@ -146,6 +147,7 @@ async def create_order(req: CreateOrderReq, buyer=Depends(require_buyer)):
             "route_distance_km": req.route_distance_km,
             "route_time_minutes": req.route_time_minutes,
             "route_geometry": req.route_geometry,
+            "created_at": datetime.utcnow()
         }
 
         result = await orders_col.insert_one(order_doc)

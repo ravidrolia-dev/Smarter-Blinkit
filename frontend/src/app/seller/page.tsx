@@ -13,17 +13,20 @@ export default function SellerDashboard() {
     const { user } = useAuth();
     const [products, setProducts] = useState<any[]>([]);
     const [recentOrders, setRecentOrders] = useState<any[]>([]);
+    const [recentReviews, setRecentReviews] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [lastUpdate, setLastUpdate] = useState(new Date());
 
     const fetchAll = useCallback(async () => {
         try {
-            const [p, ro] = await Promise.all([
+            const [p, ro, rr] = await Promise.all([
                 inventoryApi.myProducts(),
                 analyticsApi.recentOrders({ seller_id: user?.id }),
+                analyticsApi.getSellerReviews(user?.id as string, 5)
             ]);
             setProducts(p.data);
             setRecentOrders(ro.data.slice(0, 5));
+            setRecentReviews(rr.data);
             setLastUpdate(new Date());
         } catch (err) {
             console.error("Dashboard refresh failed:", err);
@@ -154,6 +157,36 @@ export default function SellerDashboard() {
                         </ResponsiveContainer>
                     ) : (
                         <div className="text-center py-12 text-gray-400">No category sales yet</div>
+                    )}
+                </div>
+            </div>
+
+            {/* Recent Reviews */}
+            <div className="card mb-6">
+                <h2 className="section-title mb-4">⭐ Recent Reviews</h2>
+                <div className="space-y-4">
+                    {recentReviews.length === 0 ? (
+                        <p className="text-center py-8 text-gray-400">No reviews received yet.</p>
+                    ) : (
+                        recentReviews.map((rev) => (
+                            <div key={rev.id} className="p-4 rounded-xl bg-gray-50 border border-gray-100 flex gap-4">
+                                <div className="w-12 h-12 rounded-lg bg-yellow-100 flex-shrink-0 flex items-center justify-center text-xl overflow-hidden">
+                                    {rev.product_image ? <img src={rev.product_image} alt={rev.product_name} className="w-full h-full object-cover" /> : "🛒"}
+                                </div>
+                                <div className="flex-1">
+                                    <div className="flex justify-between items-start mb-1">
+                                        <p className="font-bold text-gray-900 text-sm">{rev.product_name}</p>
+                                        <div className="flex text-orange-500 text-xs">
+                                            {[...Array(5)].map((_, i) => (
+                                                <span key={i}>{i < rev.rating ? "★" : "☆"}</span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-gray-600 italic">"{rev.review_text}"</p>
+                                    <p className="text-[10px] text-gray-400 mt-1">— {rev.user_name} on {new Date(rev.created_at).toLocaleDateString()}</p>
+                                </div>
+                            </div>
+                        ))
                     )}
                 </div>
             </div>

@@ -48,7 +48,15 @@ export const productsApi = {
     update: (id: string, data: any) => api.patch(`/products/${id}`, data),
     delete: (id: string) => api.delete(`/products/${id}`),
     recommendations: (id: string) => api.get(`/products/${id}/recommendations`),
+    listReviews: (id: string, params?: any) => api.get(`/products/${id}/reviews`, { params }),
+    addReview: (id: string, data: any) => api.post(`/products/${id}/review`, data),
     generateBarcode: () => api.post("/inventory/generate-barcode"),
+};
+
+// ===== Reviews =====
+export const reviewsApi = {
+    update: (id: string, data: any) => api.put(`/reviews/${id}`, data),
+    delete: (id: string) => api.delete(`/reviews/${id}`),
 };
 
 // ===== Search =====
@@ -89,7 +97,11 @@ export const analyticsApi = {
     topShops: () => api.get("/analytics/top-shops"),
     categoryBreakdown: () => api.get("/analytics/category-breakdown"),
     recentOrders: (params?: any) => api.get("/analytics/recent-orders", { params }),
-    moneyMap: () => api.get("/analytics/money-map"),
+    getMoneyMap: (days: number = 30, category?: string, seller_id?: string) =>
+        api.get("/analytics/money-map", { params: { days, category, seller_id } }),
+    getBestsellers: (limit: number = 10) => api.get("/analytics/bestsellers", { params: { limit } }),
+    getSellerReviews: (seller_id: string, limit: number = 20) =>
+        api.get("/analytics/seller-reviews", { params: { seller_id, limit } }),
 };
 
 // ===== Demand =====

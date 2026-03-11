@@ -11,6 +11,7 @@ export default function BuyerDashboard() {
     const { user } = useAuth();
     const [topProducts, setTopProducts] = useState<any[]>([]);
     const [featured, setFeatured] = useState<any[]>([]);
+    const [bestsellers, setBestsellers] = useState<any[]>([]);
     const [categories, setCategories] = useState<any[]>([]);
     const [sellers, setSellers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -38,6 +39,11 @@ export default function BuyerDashboard() {
         analyticsApi.categoryBreakdown()
             .then((res) => setCategories(res.data.slice(0, 6)))
             .catch((err) => console.error("Categories fail:", err));
+
+        // Fetch bestsellers
+        analyticsApi.getBestsellers(8)
+            .then((res) => setBestsellers(res.data))
+            .catch((err) => console.error("Bestsellers fail:", err));
     }, []);
 
     // Sync sellers when location changes
@@ -93,20 +99,43 @@ export default function BuyerDashboard() {
             <div className="mb-6">
                 <div className="flex items-center justify-between mb-3">
                     <div>
-                        <h2 className="section-title">Featured Products</h2>
-                        <p className="section-sub">Fresh picks from local shops near you</p>
+                        <h2 className="section-title">Best Selling Products 🔥</h2>
+                        <p className="section-sub">Most loved items in the marketplace</p>
                     </div>
                     <Link href="/buyer/search?q=popular" className="btn-ghost text-xs">See all →</Link>
                 </div>
                 {loading ? (
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {[...Array(8)].map((_, i) => (
+                        {[...Array(4)].map((_, i) => (
                             <div key={i} className="skeleton h-52 rounded-2xl" />
                         ))}
                     </div>
                 ) : (
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger">
-                        {featured.map((p) => (
+                        {bestsellers.slice(0, 4).map((p) => (
+                            <ProductCard key={p.id || p._id} product={p} />
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Recently Added / Featured */}
+            <div className="mb-6">
+                <div className="flex items-center justify-between mb-3">
+                    <div>
+                        <h2 className="section-title">Fresh Arrivals</h2>
+                        <p className="section-sub">Newly added items from local shops</p>
+                    </div>
+                </div>
+                {loading ? (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {[...Array(4)].map((_, i) => (
+                            <div key={i} className="skeleton h-52 rounded-2xl" />
+                        ))}
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger">
+                        {featured.slice(0, 4).map((p) => (
                             <ProductCard key={p.id || p._id} product={p} />
                         ))}
                     </div>
@@ -190,7 +219,12 @@ function ProductCard({ product }: { product: any }) {
     return (
         <div className="product-card animate-fade-up">
             <Link href={`/buyer/product/${id}`} style={{ textDecoration: "none", color: "inherit" }}>
-                <div className="product-card-img flex items-center justify-center text-5xl bg-yellow-50">
+                <div className="product-card-img flex items-center justify-center text-5xl bg-yellow-50 relative overflow-hidden">
+                    {product.is_bestseller && (
+                        <span style={{ position: "absolute", top: 8, left: 8, backgroundColor: "#F97316", color: "white", padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700, zIndex: 10 }}>
+                            🔥 BESTSELLER
+                        </span>
+                    )}
                     {product.image_url ? (
                         <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
                     ) : (
@@ -199,7 +233,14 @@ function ProductCard({ product }: { product: any }) {
                 </div>
                 <div className="product-card-body">
                     <p className="font-bold text-gray-900 text-sm truncate">{product.name}</p>
-                    <p className="text-xs text-gray-400 mb-2 truncate">{product.category}</p>
+                    <div className="flex items-center gap-2 mb-1">
+                        <p className="text-[10px] text-gray-400 truncate flex-1">{product.category}</p>
+                        {product.rating > 0 && (
+                            <span className="flex items-center gap-0.5 text-[10px] font-bold text-orange-500">
+                                ★ {product.rating}
+                            </span>
+                        )}
+                    </div>
                     <div className="flex items-center justify-between">
                         <span className="font-black text-gray-900">₹{product.price}</span>
                         <button onClick={addToCart}

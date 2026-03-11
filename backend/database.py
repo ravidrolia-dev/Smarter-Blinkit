@@ -44,6 +44,9 @@ def get_product_demand_collection():
 def get_recipe_cache_collection():
     return async_db.recipe_cache
 
+def get_product_reviews_collection():
+    return async_db.product_reviews
+
 async def create_indexes():
     """Create all required indexes."""
     users = get_users_collection()
@@ -66,5 +69,11 @@ async def create_indexes():
     await demand.create_index([("location", "2dsphere")])
     await demand.create_index("status")
     await recipe_cache.create_index("meal_query", unique=True)
+    
+    # Review indexes
+    reviews = get_product_reviews_collection()
+    await reviews.create_index("product_id")
+    await reviews.create_index("user_id")
+    await reviews.create_index([("user_id", 1), ("product_id", 1), ("order_id", 1)], unique=True)
 
     print("Database indexes created")

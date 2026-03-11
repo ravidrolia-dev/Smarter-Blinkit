@@ -14,9 +14,18 @@ const buyerNav = [
     { href: "/buyer/orders", label: "📦 My Orders" },
 ];
 
+const adminNav = [
+    { href: "/admin", label: "📊 Admin Dashboard", exact: true },
+    { href: "/admin/orders", label: "🧾 All Orders" },
+    { href: "/admin/shops", label: "🏪 Shops" },
+    { href: "/admin/analytics", label: "📈 Analytics" },
+    { href: "/admin/money-map", label: "💰 Money Map" },
+];
+
 const sellerNav = [
     { href: "/seller", label: "📊 Dashboard", exact: true },
     { href: "/seller/demand", label: "📢 Demand Requests" },
+    { href: "/seller/money-map", label: "💰 Money Map" },
     { href: "/seller/top-picks", label: "🏆 Top Picks" },
     { href: "/seller/inventory", label: "📦 Inventory" },
     { href: "/seller/barcode", label: "📷 Barcode Scanner" },
@@ -167,7 +176,7 @@ function AddressBar() {
     );
 }
 
-export default function DashboardLayout({ children, role }: { children: React.ReactNode; role: "buyer" | "seller" }) {
+export default function DashboardLayout({ children, role }: { children: React.ReactNode; role: "buyer" | "seller" | "admin" }) {
     const pathname = usePathname();
     const { user, logout, isLoading } = useAuth();
     const [mounted, setMounted] = useState(false);
@@ -176,7 +185,7 @@ export default function DashboardLayout({ children, role }: { children: React.Re
         setMounted(true);
     }, []);
 
-    const nav = role === "buyer" ? buyerNav : sellerNav;
+    const nav = role === "admin" ? adminNav : role === "buyer" ? buyerNav : sellerNav;
 
     const isActive = (href: string, exact?: boolean) =>
         exact ? pathname === href : pathname.startsWith(href);
@@ -213,7 +222,7 @@ export default function DashboardLayout({ children, role }: { children: React.Re
             <aside className="sidebar print:!hidden">
                 <div className="px-4 mb-4">
                     <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-                        {role === "buyer" ? "Buyer Portal" : "Seller Portal"}
+                        {role === "admin" ? "Admin Portal" : role === "buyer" ? "Buyer Portal" : "Seller Portal"}
                     </p>
                 </div>
                 <nav className="flex-1 space-y-0.5">

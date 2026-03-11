@@ -65,6 +65,7 @@ class ProductInDB(ProductCreate):
     id: Optional[str] = None
     embedding: Optional[List[float]] = None
     rating: float = 0.0
+    review_count: int = 0
     total_sold: int = 0
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -72,8 +73,10 @@ class ProductPublic(ProductBase):
     id: str
     seller_id: str
     rating: float
+    review_count: int
     total_sold: int
     distance_km: Optional[float] = None
+    is_bestseller: bool = False
 
 # ----- ORDER MODELS -----
 class CartItem(BaseModel):
@@ -123,3 +126,26 @@ class ShopInDB(ShopBase):
     is_active: bool = True
     total_sales: int = 0
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# ----- REVIEW MODELS -----
+class ProductReviewBase(BaseModel):
+    product_id: str
+    rating: int = Field(ge=1, le=5)
+    review_text: str
+
+class ProductReviewCreate(ProductReviewBase):
+    order_id: str
+
+class ProductReviewUpdate(BaseModel):
+    rating: Optional[int] = Field(None, ge=1, le=5)
+    review_text: Optional[str] = None
+
+class ProductReviewInDB(ProductReviewCreate):
+    id: Optional[str] = None
+    user_id: str
+    user_name: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ProductReviewPublic(ProductReviewInDB):
+    id: str
