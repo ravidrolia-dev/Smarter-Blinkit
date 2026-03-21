@@ -1,7 +1,7 @@
 import os
 import logging
 import asyncio
-from google import genai
+import google.genai as genai
 from .rate_limit_manager import manager
 from dotenv import load_dotenv
 
