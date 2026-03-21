@@ -3,6 +3,8 @@ import "./globals.css";
 import { Toaster } from "react-hot-toast";
 import { Providers } from "./Providers";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Smarter BlinkIt — Smart Marketplace",
   description: "AI-powered grocery marketplace with intent search, recipe agent, and instant delivery from local shops.",
