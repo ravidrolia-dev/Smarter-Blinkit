@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
@@ -32,14 +32,33 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS
+# CORS Configuration
+cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost:3000")
+# Clean and validate origins: strip whitespace, remove trailing slashes, skip empty
+allow_origins = [o.strip().rstrip("/") for o in cors_origins_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# Request Logging Middleware (for debugging CORS/OPTIONS issues on Render)
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    # Log incoming request basic info
+    origin = request.headers.get("origin")
+    method = request.method
+    path = request.url.path
+    print(f"DEBUG: Incoming {method} request to {path} | Origin: {origin}")
+    
+    response = await call_next(request)
+    
+    print(f"DEBUG: Response for {method} {path} | Status: {response.status_code}")
+    return response
 
 # Routers
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
