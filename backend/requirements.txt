@@ -10,7 +10,7 @@ Pillow
 python-barcode==0.15.1
 sentence-transformers==3.0.0
 neo4j==5.21.0
-razorpay==1.4.0
+razorpay>=1.4.1
 python-dotenv==1.0.1
 google-generativeai==0.7.2
 numpy<2.0.0
