@@ -16,6 +16,7 @@
 | Payments | Razorpay (test mode) |
 | Barcode | OpenCV + zxing-cpp + pyzbar (Dual-Engine backend pipeline) |
 | Face ID | face_recognition (dlib) |
+| Market Basket | Apriori Algorithm (mlxtend + pandas) |
 
 ---
 
@@ -124,9 +125,12 @@ NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_...
 ### Stage 3 — Orchestrator
 - **Smart Cart Split**: Multi-shop orders grouped by shop with subtotals
 - **Live Storeboard**: Auto-refreshing dashboard with charts, leaderboard, order feed
+- **Money Map Analytics**: High-fidelity Leaflet + OpenStreetMap geo-heatmap showing real-time sales demand and neighborhood spending density.
 
-### Bonus — God Mode
-- **Money Map**: API endpoint returning geo-heatmap data for neighborhood analytics
+### God Mode — Smart Analytics
+- **Smart Product Pairing**: AI-powered "Frequently Bought Together" recommendations using Market Basket Analysis (Apriori).
+- **Market Insights Portal**: Deep-dive seller dashboard to visualize platform-wide product associations and trigger manual AI model retraining.
+- **Upsell Engine**: Multi-stage recommendation placement on Product pages, Cart summaries, and Checkout sidebars.
 
 ---
 
@@ -142,12 +146,14 @@ Smarter-Blinkit/
 │       │   ├── register/          # 2-step registration
 │       │   ├── buyer/             # Buyer portal
 │       │   │   ├── page.tsx       # Dashboard
-│       │   │   ├── search/        # Smart search
+│       │   │   ├── search/        # Smart Search
 │       │   │   ├── agent/         # Recipe Agent
-│       │   │   ├── cart/          # Cart + Razorpay
-│       │   │   └── orders/        # Order history
+│       │   │   ├── cart/          # Cart + Recommendations
+│       │   │   └── product/       # Product Detail View
 │       │   └── seller/            # Seller portal
 │       │       ├── page.tsx       # Dashboard
+│       │       ├── insights/      # Market Insights Dashboard
+│       │       ├── money-map/     # Geo-demand Analytics
 │       │       ├── inventory/     # Product table
 │       │       ├── barcode/       # Barcode scanner
 │       │       ├── orders/        # Live Storeboard
@@ -174,6 +180,7 @@ Smarter-Blinkit/
 │       ├── ai/
 │       │   ├── gemini_service.py      # Resilient sequential AI fallback logic
 │       │   └── rate_limit_manager.py  # Thread-safe RPM/RPD tracking
+│       ├── product_pairing_service.py # Apriori Market Basket Analysis
 │       ├── face_auth.py         # face_recognition lib
 │       ├── semantic_search.py   # sentence-transformers
 │       ├── neo4j_service.py     # Graph DB operations
