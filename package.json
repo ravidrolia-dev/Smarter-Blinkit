@@ -1,0 +1,11 @@
+{
+  "name": "smarter-blinkit-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "cd frontend && npm run build",
+    "install": "cd frontend && npm install",
+    "start": "cd frontend && npm start",
+    "dev": "cd frontend && npm run dev"
+  }
+}
