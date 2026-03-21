@@ -35,7 +35,7 @@ export default function MarketInsightsPage() {
             const detailedInsights = topProducts.map((p: any, idx: number) => ({
                 product: p,
                 pairings: pairingsRes[idx].data
-            })).filter(i => i.pairings.length > 0);
+            })).filter((i: any) => i.pairings.length > 0);
 
             setInsights(detailedInsights);
         } catch (err) {

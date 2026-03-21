@@ -24,8 +24,8 @@ export default function SellerDemandPage() {
         fetchDemand();
     }, []);
 
-    const totalRequests = demands.reduce((acc, curr) => acc + curr.buyer_count, 0);
-    const highDemandItems = demands.filter(d => d.buyer_count > 1).length;
+    const totalRequests = demands.reduce((acc: number, curr: any) => acc + curr.buyer_count, 0);
+    const highDemandItems = demands.filter((d: any) => d.buyer_count > 1).length;
 
     return (
         <DashboardLayout role="seller">

@@ -41,14 +41,14 @@ export default function SellerDashboard() {
         return () => clearInterval(interval);
     }, [fetchAll]);
 
-    const totalStock = products.reduce((s, p) => s + (p.stock || 0), 0);
-    const totalSold = products.reduce((s, p) => s + (p.total_sold || 0), 0);
-    const lowStock = products.filter((p) => p.stock <= 5);
-    const revenue = products.reduce((s, p) => s + (p.price * p.total_sold || 0), 0);
+    const totalStock = products.reduce((s: number, p: any) => s + (p.stock || 0), 0);
+    const totalSold = products.reduce((s: number, p: any) => s + (p.total_sold || 0), 0);
+    const lowStock = products.filter((p: any) => p.stock <= 5);
+    const revenue = products.reduce((s: number, p: any) => s + (p.price * p.total_sold || 0), 0);
 
     // Personalized Analytics Logic
     const myTopProducts = [...products]
-        .filter(p => p.total_sold > 0)
+        .filter((p: any) => p.total_sold > 0)
         .sort((a, b) => b.total_sold - a.total_sold)
         .slice(0, 5);
 
@@ -58,7 +58,7 @@ export default function SellerDashboard() {
             categoryMap[p.category] = (categoryMap[p.category] || 0) + p.total_sold;
         }
     });
-    const myCategories = Object.entries(categoryMap).map(([name, total_sold]) => ({
+    const myCategories = Object.entries(categoryMap).map(([name, total_sold]: [string, number]) => ({
         name,
         total_sold
     })).sort((a, b) => b.total_sold - a.total_sold);
