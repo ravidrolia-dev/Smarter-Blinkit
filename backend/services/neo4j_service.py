@@ -120,7 +120,6 @@ async def sync_similar_products(product_id: str, name: str, category: str, embed
     """
     from database import get_products_collection
     from bson import ObjectId
-    import numpy as np
     
     driver = get_driver()
     if not driver:
@@ -142,15 +141,10 @@ async def sync_similar_products(product_id: str, name: str, category: str, embed
             if other.get("name") == name:
                 continue
                 
-            score = 0.5 # Base score for same category
+            score = 0.5 # Default score for same category
             
-            # If both have embeddings, calculate cosine similarity
-            other_emb = other.get("embedding")
-            if embedding and other_emb:
-                v1 = np.array(embedding)
-                v2 = np.array(other_emb)
-                # Both are normalized in our system, so dot product = cosine similarity
-                score = float(np.dot(v1, v2))
+            # Note: Vector similarity comparison removed to save memory (Render 512MB)
+            # We now rely primarily on category-based linking in the graph.
             
             if score > 0.4: # Only link if similarity is decent
                 session.run(

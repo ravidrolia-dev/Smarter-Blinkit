@@ -302,6 +302,8 @@ export default function CartPage() {
         const currentLng = manualCoords?.lng || location?.lng;
 
         const timer = setTimeout(async () => {
+            if (address.trim().length < 3) return; // Don't estimate for very short/empty addresses
+            
             setLoadingEstimate(true);
             try {
                 const res = await ordersApi.estimate({
@@ -311,8 +313,13 @@ export default function CartPage() {
                     buyer_lng: currentLng
                 });
                 setEstimate(res.data);
-            } catch (err) {
+            } catch (err: any) {
                 console.error("Estimation failed:", err);
+                const msg = err.response?.data?.detail;
+                if (msg) {
+                    toast.error(msg, { id: 'est-error' });
+                }
+                setEstimate(null);
             } finally {
                 setLoadingEstimate(false);
             }
@@ -587,6 +594,7 @@ export default function CartPage() {
                                 title="People often add"
                                 subtitle="Items commonly bought together"
                                 maxItems={2}
+                                isSidebar={true}
                             />
                         </div>
                         <button onClick={handleProceedToPayment} disabled={loadingOrder}

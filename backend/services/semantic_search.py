@@ -10,27 +10,13 @@ Key features:
   - Model cached globally (loaded once on first use)
 """
 from typing import List, Dict, Any
-import numpy as np
 
 # ── Model setup ──────────────────────────────────────────────────────────────
-_model = None
-SEMANTIC_AVAILABLE = True # Assume available if package exists, checked lazily
-
-def get_model() -> "SentenceTransformer":
-    global _model
-    if _model is None:
-        print("Loading sentence-transformers model (cached after first load)...")
-        from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
-        print("Semantic model loaded.")
-    return _model
-
+SEMANTIC_AVAILABLE = False # Disabled for memory optimization (Render 512MB)
 
 def embed_text(text: str) -> List[float]:
-    """Generate a normalized embedding for a text string."""
-    model = get_model()
-    vec = model.encode(text, normalize_embeddings=True, convert_to_numpy=True)
-    return vec.tolist()
+    """Placeholder for text embedding. Returns empty list as models are disabled."""
+    return []
 
 
 # ── Intent Boost Map ─────────────────────────────────────────────────────────
@@ -88,54 +74,36 @@ def rank_products_by_query(
     limit: int = 20,
 ) -> List[Dict[str, Any]]:
     """
-    Rank products by semantic similarity + intent boost.
-
-    Returns a list of product dicts with `_score` added, sorted descending.
-    Products below `threshold` are excluded.
+    Rank products by keyword relevance + intent boost.
+    Optimized for memory by removing sentence-transformers.
     """
-    if not SEMANTIC_AVAILABLE or not products:
-        return _keyword_fallback(query, products)
-
-    # 1. Encode + normalize query
-    try:
-        model = get_model()
-        query_vec = model.encode(query, normalize_embeddings=True, convert_to_numpy=True)
-    except Exception as e:
-        print(f"Embedding error: {e}")
-        return _keyword_fallback(query, products)
-
-    query_lower = query.lower()
-    scored = []
-
-    for p in products:
-        emb = p.get("embedding")
-        if not emb:
-            base_score = 0.0
-        else:
-            # Fast dot-product (equivalent to cosine since both are L2-normalized)
-            product_vec = np.array(emb, dtype=np.float32)
-            # Re-normalize stored embedding in case old ones weren't normalized
-            norm = np.linalg.norm(product_vec)
-            if norm > 0:
-                product_vec = product_vec / norm
-            base_score = float(np.dot(query_vec, product_vec))
-
-        # 2. Apply intent boost
-        boost = _get_intent_multiplier(p, query_lower)
-        final_score = base_score * boost
-
-        if final_score >= threshold:
-            scored.append({**p, "_score": round(final_score, 4)})
-
-    # 3. Sort by score descending
-    scored.sort(key=lambda x: x["_score"], reverse=True)
-    return scored[:limit]
+    return _keyword_fallback(query, products)[:limit]
 
 
 def _keyword_fallback(query: str, products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Simple keyword-based fallback when sentence-transformers is unavailable."""
+    """Simple keyword-based relevance ranking with intent boosting."""
     q = query.lower()
-    def score(p):
-        text = f"{p.get('name','')} {p.get('description','')} {' '.join(p.get('tags',[]))}".lower()
-        return sum(1 for word in q.split() if word in text)
-    return sorted(products, key=score, reverse=True)
+    q_words = q.split()
+    
+    scored = []
+    for p in products:
+        text = f"{p.get('name','') or ''} {p.get('description','') or ''} {' '.join(p.get('tags',[]))}".lower()
+        
+        # Base score = word overlap count normalized by query length
+        matches = sum(2 for word in q_words if word in text) # exact word in text
+        # also check partial matches
+        partial_matches = sum(0.5 for word in q_words if word in text and word not in text.split())
+        
+        base_score = (matches + partial_matches) / (len(q_words) or 1)
+        
+        # Apply intent boost
+        boost = _get_intent_multiplier(p, q)
+        final_score = base_score * boost
+        
+        # We need to add _score for compatibility with routes
+        p_with_score = {**p, "_score": round(final_score, 4)}
+        scored.append(p_with_score)
+        
+    # Sort by score descending
+    scored.sort(key=lambda x: x["_score"], reverse=True)
+    return scored

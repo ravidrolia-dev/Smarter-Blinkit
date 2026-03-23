@@ -5,7 +5,8 @@ from services.jwt_utils import get_password_hash, verify_password, create_access
 from services.face_auth import encode_face_from_base64, compare_face
 from bson import ObjectId
 from typing import Optional
-import numpy as np
+
+# Removed heavy numpy import to save memory
 
 router = APIRouter()
 
@@ -72,9 +73,17 @@ async def register(req: RegisterRequest):
         print(f"DEBUG: Processing face_image_b64 for {req.email}, len={len(req.face_image_b64)}")
         face_encoding = await encode_face_from_base64(req.face_image_b64)
         if not face_encoding:
-            print(f"DEBUG: Face detection failed for {req.email}")
-            raise HTTPException(status_code=400, detail="Face not detected. Stay still and try again.")
-        print(f"DEBUG: Face encoding successful for {req.email}, length={len(face_encoding)}")
+            print(f"DEBUG: Face detection failed or service unavailable for {req.email}")
+            # If the service is actually available but failed to find a face, we can still raise 400
+            # if we want to be strict. But for lightweight registration, we could just proceed.
+            # For now, let's keep it strict ONLY if CV2 is actually present.
+            from services.face_auth import HAS_CV2
+            if HAS_CV2:
+                raise HTTPException(status_code=400, detail="Face not detected. Stay still and try again.")
+            else:
+                print("INFO: Face registration skipped as image libraries are not installed.")
+        else:
+            print(f"DEBUG: Face encoding successful for {req.email}, length={len(face_encoding)}")
     else:
         print(f"DEBUG: No face_image_b64 provided for {req.email}")
 

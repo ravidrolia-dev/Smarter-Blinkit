@@ -1,6 +1,3 @@
-
-import pandas as pd
-from mlxtend.frequent_patterns import apriori, association_rules
 from database import get_orders_collection, get_product_pairings_collection, get_products_collection
 from bson import ObjectId
 from datetime import datetime
@@ -10,8 +7,9 @@ logger = logging.getLogger(__name__)
 
 async def train_product_pairings(min_support=0.01, min_threshold=0.5):
     """
-    Analyzes historical paid orders using Market Basket Analysis (Apriori).
-    Stores association rules in the database.
+    Analyzes historical paid orders using a lightweight frequency-based counter.
+    Replaces heavy pandas/mlxtend (Apriori) for memory optimization.
+    Stores association rules (product_id -> paired_product_id) in the database.
     """
     try:
         orders_col = get_orders_collection()
@@ -25,73 +23,72 @@ async def train_product_pairings(min_support=0.01, min_threshold=0.5):
             logger.info("No paid orders found for pairing analysis.")
             return {"status": "success", "message": "No orders to analyze", "rules_count": 0}
             
-        # 2. Prepare transaction data
-        transactions = []
+        # 2. Count frequencies
+        # item_counts: product_id -> count of orders containing it
+        # pair_counts: (id1, id2) -> count of orders containing both
+        item_counts = {}
+        pair_counts = {}
+        total_transactions = len(orders)
+
         for order in orders:
-            item_ids = [item["product_id"] for item in order.get("items", [])]
-            if item_ids:
-                transactions.append(item_ids)
-                
-        if not transactions:
-            return {"status": "success", "message": "No transactions found", "rules_count": 0}
-
-        # 3. One-hot encode using TransactionEncoder
-        from mlxtend.preprocessing import TransactionEncoder
-        
-        logger.info(f"Encoding {len(transactions)} transactions...")
-        print(f"Encoding {len(transactions)} transactions...")
-        
-        te = TransactionEncoder()
-        te_ary = te.fit(transactions).transform(transactions)
-        df = pd.DataFrame(te_ary, columns=te.columns_)
-        
-        logger.info(f"Encoded shape: {df.shape}")
-        print(f"Encoded shape: {df.shape}")
-
-        # 4. Run Apriori
-        logger.info("Running apriori...")
-        print("Running apriori...")
-        # For small datasets with many items, increase support to avoid memory explosion
-        frequent_itemsets = apriori(df, min_support=min_support, use_colnames=True, max_len=2)
-        
-        if frequent_itemsets.empty:
-            logger.info(f"No frequent itemsets found with min_support={min_support}")
-            print(f"No frequent itemsets found with min_support={min_support}")
-            return {"status": "success", "message": "No patterns found", "rules_count": 0}
+            items = list(set([item["product_id"] for item in order.get("items", [])]))
+            if not items: continue
             
-        # 5. Generate association rules
-        logger.info("Generating association rules...")
-        print("Generating association rules...")
-        rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_threshold)
-        
-        if rules.empty:
-            logger.info("No association rules found with min_threshold=" + str(min_threshold))
-            return {"status": "success", "message": "No strong rules found", "rules_count": 0}
+            for i in range(len(items)):
+                item_i = items[i]
+                item_counts[item_i] = item_counts.get(item_i, 0) + 1
+                
+                for j in range(i + 1, len(items)):
+                    item_j = items[j]
+                    pair = tuple(sorted((item_i, item_j)))
+                    pair_counts[pair] = pair_counts.get(pair, 0) + 1
 
-        # 6. Save rules to MongoDB
-        # Clear old pairings
-        await pairings_col.delete_many({})
+        # 3. Generate rules
+        # Rule: A -> B
+        # Support(A,B) = count(A,B) / total_transactions
+        # Confidence(A->B) = count(A,B) / count(A)
+        # Lift(A,B) = Support(A,B) / (Support(A) * Support(B))
         
         pairings_to_store = []
-        for _, row in rules.iterrows():
-            # row['antecedents'] and row['consequents'] are frozensets
-            for antecedent in row['antecedents']:
-                for consequent in row['consequents']:
+        for (id1, id2), count in pair_counts.items():
+            support = count / total_transactions
+            if support >= min_support:
+                # Rule 1: id1 -> id2
+                conf1 = count / item_counts[id1]
+                if conf1 >= min_threshold:
+                    lift1 = support / ((item_counts[id1]/total_transactions) * (item_counts[id2]/total_transactions))
                     pairings_to_store.append({
-                        "product_id": str(antecedent),
-                        "paired_product_id": str(consequent),
-                        "confidence": float(row['confidence']),
-                        "support": float(row['support']),
-                        "lift": float(row['lift']),
+                        "product_id": str(id1),
+                        "paired_product_id": str(id2),
+                        "confidence": float(conf1),
+                        "support": float(support),
+                        "lift": float(lift1),
                         "created_at": datetime.utcnow()
                     })
-                    
+                
+                # Rule 2: id2 -> id1
+                conf2 = count / item_counts[id2]
+                if conf2 >= min_threshold:
+                    lift2 = support / ((item_counts[id1]/total_transactions) * (item_counts[id2]/total_transactions))
+                    pairings_to_store.append({
+                        "product_id": str(id2),
+                        "paired_product_id": str(id1),
+                        "confidence": float(conf2),
+                        "support": float(support),
+                        "lift": float(lift2),
+                        "created_at": datetime.utcnow()
+                    })
+
+        # 4. Save rules to MongoDB
+        await pairings_col.delete_many({})
         if pairings_to_store:
-            await pairings_col.insert_many(pairings_to_store)
+            # Sort by confidence descending to keep top ones if list is huge
+            pairings_to_store.sort(key=lambda x: x["confidence"], reverse=True)
+            await pairings_col.insert_many(pairings_to_store[:5000]) # Cap at 5000 rules
             
         return {
             "status": "success", 
-            "message": f"Successfully trained with {len(pairings_to_store)} rules",
+            "message": f"Successfully trained with {len(pairings_to_store)} rules (Memory Optimized)",
             "rules_count": len(pairings_to_store)
         }
 

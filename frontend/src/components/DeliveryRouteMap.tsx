@@ -72,12 +72,17 @@ export default function DeliveryRouteMap({ stops, geometry, height = "400px" }: 
     // Decode geometry if available
     const roadPoints: [number, number][] = geometry ? polyline.decode(geometry) : [];
 
+    // Use a unique key based on the NUMBER of stops and existence of geometry 
+    // to force a clean Leaflet re-mount only when the route structure fundamentally changes.
+    const mapKey = `map-${stops.length}-${geometry ? 'with-route' : 'direct'}`;
+
     return (
         <div style={{ height, width: "100%", borderRadius: "16px", overflow: "hidden", border: "2px solid #FFD000", position: "relative", background: "#f8fafc", zIndex: 0 }}>
             <div style={{ position: "absolute", top: 8, left: 8, zIndex: 10, background: "white", padding: "4px 8px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", fontSize: "10px", fontWeight: "bold" }}>
                 📍 Delivery Route
             </div>
             <MapContainer
+                key={mapKey}
                 center={[stops[0]?.lat || 26.9124, stops[0]?.lng || 75.7873]}
                 zoom={13}
                 scrollWheelZoom={false}
@@ -85,7 +90,7 @@ export default function DeliveryRouteMap({ stops, geometry, height = "400px" }: 
             >
                 <TileLayer
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
                 />
 
                 {/* Visualizing the Route: Solid for road, Dashed for fallback */}
@@ -94,16 +99,16 @@ export default function DeliveryRouteMap({ stops, geometry, height = "400px" }: 
                         positions={roadPoints}
                         pathOptions={{ color: "#FFD000", weight: 5, opacity: 0.9 }}
                     />
-                ) : (
+                ) : stops.length > 1 ? (
                     <Polyline
                         positions={stops.map(s => [s.lat, s.lng] as [number, number])}
                         pathOptions={{ color: "#FFD000", weight: 4, opacity: 0.7, dashArray: "10, 10" }}
                     />
-                )}
+                ) : null}
 
                 {stops.map((stop, idx) => (
                     <Marker
-                        key={idx}
+                        key={`${idx}-${stop.lat}-${stop.lng}`}
                         position={[stop.lat, stop.lng]}
                         icon={stop.type === "shop" ? ShopIcon : BuyerIcon}
                     >

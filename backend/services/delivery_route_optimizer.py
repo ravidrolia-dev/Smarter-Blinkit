@@ -28,10 +28,17 @@ class DeliveryRouteOptimizer:
         if self.buyer_lat is not None and self.buyer_lng is not None:
             return True
         
+        if not address or len(address.strip()) < 3:
+            return False
+
+        print(f"DEBUG: Attempting to resolve buyer address: '{address}'")
         coords = await geocoding_service.get_coordinates(address)
         if coords:
             self.buyer_lat, self.buyer_lng = coords
+            print(f"DEBUG: Resolved address to: {coords}")
             return True
+        
+        print(f"WARNING: Could not resolve address: '{address}'")
         return False
 
     async def optimize_shops(self, items: List[Dict[str, Any]], products_col, users_col) -> List[Dict[str, Any]]:
@@ -153,7 +160,7 @@ class DeliveryRouteOptimizer:
                 from fastapi import HTTPException
                 raise HTTPException(
                     status_code=400, 
-                    detail=f"Shop '{shop['shop_name']}' is too far ({round(dist_to_home,1)} km). Delivery is only available within 12km."
+                    detail=f"Product at '{shop['shop_name']}' is not deliverable at your location (exceeds 12km range)."
                 )
 
         # Step 1: Improved Greedy Nearest Neighbor (working backwards from home)

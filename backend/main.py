@@ -6,22 +6,9 @@ from dotenv import load_dotenv
 
 from routes import auth, products, search, orders, inventory, agent, analytics, demand, user, reviews
 
-def _preload_model():
-    """Load the sentence-transformers model (called in background daemon thread)."""
-    try:
-        from services.semantic_search import get_model
-        get_model()
-    except Exception as e:
-        print(f"Semantic model preload failed: {e}")
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Smarter BlinkIt API starting up...")
-    # Kick off model loading in a daemon background thread — does NOT block server startup.
-    # First search request will use the cached model once it finishes loading (~30s).
-    import threading
-    t = threading.Thread(target=_preload_model, daemon=True, name="model-preload")
-    t.start()
+    print("Smarter BlinkIt API starting up (Memory Optimized)...")
     yield
     print("Smarter BlinkIt API shutting down...")
 

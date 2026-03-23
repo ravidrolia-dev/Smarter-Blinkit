@@ -1,16 +1,25 @@
-import cv2
-import numpy as np
+try:
+    import cv2
+    import numpy as np
+    HAS_CV2 = True
+    # Initialize the legacy Haar Cascade classifier
+    face_cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    )
+except ImportError:
+    cv2 = None
+    np = None
+    face_cascade = None
+    HAS_CV2 = False
+
 import base64
 import asyncio
 from functools import partial
 
-# Initialize the legacy Haar Cascade classifier
-face_cascade = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-)
-
 def _encode_face_sync(image_base64: str):
     """Legacy Synchronous face encoding using basic OpenCV cropping. No strict checks."""
+    if not HAS_CV2:
+        return None
     try:
         # Handle both plain base64 and data URL formats
         if "," in image_base64:
@@ -52,7 +61,7 @@ async def encode_face_from_base64(image_base64: str):
 
 def compare_face(known_encoding, new_encoding_list) -> float:
     """Legacy comparison using Template Matching (Correlation). Higher is better."""
-    if known_encoding is None or new_encoding_list is None:
+    if not HAS_CV2 or known_encoding is None or new_encoding_list is None:
         return -1.0
     try:
         # Reconstruct the 100x100 grayscale images from the flattened lists
@@ -66,4 +75,4 @@ def compare_face(known_encoding, new_encoding_list) -> float:
         return match_score
     except Exception as e:
         print("Legacy comparison error:", e)
-        return -1.0
+        return -1.0

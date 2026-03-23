@@ -1,7 +1,15 @@
-import cv2
-import numpy as np
+try:
+    import cv2
+    import numpy as np
+    import zxingcpp
+    HAS_IMAGE_LIBS = True
+except ImportError:
+    cv2 = None
+    np = None
+    zxingcpp = None
+    HAS_IMAGE_LIBS = False
+
 import base64
-import zxingcpp
 import asyncio
 import time
 from functools import partial
@@ -10,6 +18,7 @@ from functools import partial
 
 def get_brightness(image):
     """Calculate mean brightness of the image (0-255)."""
+    if not HAS_IMAGE_LIBS: return 128
     if len(image.shape) == 3:
         # Convert to LAB to get accurate perceived brightness
         return cv2.cvtColor(image, cv2.COLOR_BGR2LAB)[:,:,0].mean()
@@ -17,6 +26,7 @@ def get_brightness(image):
 
 def get_blur_score(image):
     """Calculate blur score using Laplacian variance."""
+    if not HAS_IMAGE_LIBS: return 100
     if len(image.shape) == 3:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return cv2.Laplacian(image, cv2.CV_64F).var()
@@ -26,6 +36,7 @@ def detect_roi(gray):
     Detect potential barcode regions (ROI) using vertical gradients.
     Returns a list of cropped images.
     """
+    if not HAS_IMAGE_LIBS: return []
     # 1. Vertical Sobel filter to highlight barcode-like vertical bars
     grad_x = cv2.Sobel(gray, ddepth=cv2.CV_32F, dx=1, dy=0, ksize=-1)
     grad_y = cv2.Sobel(gray, ddepth=cv2.CV_32F, dx=0, dy=1, ksize=-1)
@@ -45,10 +56,6 @@ def detect_roi(gray):
     height, width = gray.shape
 
     for c in contours:
-        rect = cv2.minAreaRect(c)
-        box = cv2.boxPoints(rect)
-        box = np.intp(box)
-
         # Get bounding box
         x, y, w, h = cv2.boundingRect(c)
         
@@ -75,6 +82,7 @@ def preprocess_for_high_accuracy(gray):
     Professional preprocessing: CLAHE + Blur + Morphological Cleanup + Adaptive Threshold.
     Optimized for dense alphanumeric barcodes (Code128/Code39).
     """
+    if not HAS_IMAGE_LIBS: return gray
     # 1. CLAHE (Contrast Limited Adaptive Histogram Equalization)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
@@ -136,8 +144,13 @@ def _decode_barcode_sync(image_base64: str):
         "low_light": False,
         "is_blurry": False,
         "brightness": 0,
-        "blur_score": 0
+        "blur_score": 0,
+        "error": None
     }
+
+    if not HAS_IMAGE_LIBS:
+        metadata["error"] = "Image processing libraries NOT installed. Barcode scanning disabled for memory optimization."
+        return metadata
 
     try:
         if not image_base64:
@@ -176,12 +189,6 @@ def _decode_barcode_sync(image_base64: str):
             metadata["barcode"] = format_barcode_result(results[0])
             return metadata
 
-        # 3.5 Direct Decoding w/ GlobalHistogram (Helps highly shiny/reflective labels)
-        results = zxingcpp.read_barcodes(gray, binarizer=zxingcpp.Binarizer.GlobalHistogram)
-        if results:
-            metadata["barcode"] = format_barcode_result(results[0])
-            return metadata
-
         # 4. Advanced Preprocessing Pipeline (Adaptive Threshold, Sharpening)
         preprocessed = preprocess_for_high_accuracy(gray)
         results = zxingcpp.read_barcodes(preprocessed)
@@ -193,9 +200,6 @@ def _decode_barcode_sync(image_base64: str):
         rois = detect_roi(gray)
         # Limit to top 4 largest ROIs to prevent explosion of work
         for roi in rois[:4]:
-            # Abort if we are taking too long overall
-            if time.time() - start_time > 8.0: break
-            
             # Try original and preprocessed ROI
             results = zxingcpp.read_barcodes(roi)
             if not results:
@@ -204,44 +208,12 @@ def _decode_barcode_sync(image_base64: str):
             
             if results:
                 metadata["barcode"] = format_barcode_result(results[0])
-                print(f"DEBUG: Scanned via ROI in {time.time()-start_time:.3f}s")
                 return metadata
 
-        # 6. Final Resort: Upscale + Canny + Zxing (Only on central crop to save time)
-        if time.time() - start_time < 10.0:
-            h, w = gray.shape
-            center_gray = gray[h//4:3*h//4, w//4:3*w//4]
-            # Fast Linear interpolation
-            upscaled = cv2.resize(center_gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_LINEAR)
-            edges = cv2.Canny(upscaled, 100, 200)
-            results = zxingcpp.read_barcodes(edges)
-            if results:
-                metadata["barcode"] = format_barcode_result(results[0])
-                print(f"DEBUG: Scanned via Canny in {time.time()-start_time:.3f}s")
-                return metadata
-
-        # 7. Ultimate Fallback: The PyZbar Engine (Run on downscaled to avoid 10s hangs)
-        if time.time() - start_time < 12.0:
-            try:
-                from pyzbar.pyzbar import decode as pyzbar_decode
-                # Downscale for pyzbar if too large
-                h, w = gray.shape
-                if w > 640:
-                    pyz_img = cv2.resize(gray, (640, int(h * 640/w)))
-                else:
-                    pyz_img = gray
-                    
-                pyz_results = pyzbar_decode(pyz_img)
-                if pyz_results:
-                    metadata["barcode"] = pyz_results[0].data.decode('utf-8')
-                    print(f"DEBUG: Scanned via PyZbar in {time.time()-start_time:.3f}s")
-                    return metadata
-            except Exception:
-                pass
-            
         return metadata
     except Exception as e:
         print(f"Error in professional scanning pipeline: {e}")
+        metadata["error"] = str(e)
         return metadata
     finally:
         elapsed = time.time() - start_time
