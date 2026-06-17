@@ -63,7 +63,7 @@ app.include_router(reviews.router, prefix="/reviews", tags=["Reviews"])
 async def root():
     return {"message": "Smarter BlinkIt API", "status": "running"}
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     # Trigger hot reload to reset MongoDB connections
     return {"status": "ok"}
